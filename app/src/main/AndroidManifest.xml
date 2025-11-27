@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="top.galqq">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:label="GalQQ"
+        android:icon="@mipmap/ic_launcher"
+        android:theme="@android:style/Theme.DeviceDefault.Settings">
+        
+        <meta-data
+            android:name="xposedmodule"
+            android:value="true" />
+        <meta-data
+            android:name="xposeddescription"
+            android:value="Galgame style response options for QQ" />
+        <meta-data
+            android:name="xposedminversion"
+            android:value="51" />
+        <meta-data
+            android:name="xposedscope"
+            android:value="com.tencent.mobileqq" />
+
+        <activity
+            android:name=".ui.SettingsUiFragmentHostActivity"
+            android:label="GalQQ Settings"
+            android:exported="true"
+            android:theme="@style/Theme.AppCompat.DayNight.NoActionBar">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="de.robv.android.xposed.category.MODULE_SETTINGS" />
+            </intent-filter>
+        </activity>
+        
+        <activity
+            android:name=".ui.AiLogViewerActivity"
+            android:label="@string/ai_log_title"
+            android:exported="false"
+            android:theme="@style/Theme.AppCompat.DayNight" />
+    </application>
+</manifest>

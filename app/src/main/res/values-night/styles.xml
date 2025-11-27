@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.GalQQ.DayNight" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <!-- Dark theme background colors -->
+        <item name="android:windowBackground">#FF202124</item>
+        <item name="backgroundColor">#FF202124</item>
+        
+        <!-- Primary colors -->
+        <item name="colorPrimary">#FF82A8E7</item>
+        <item name="colorPrimaryDark">#FF5E7BC6</item>
+        <item name="colorAccent">#FF82A8E7</item>
+        <item name="colorPrimaryVariant">#FF82A8E7</item>
+        <item name="colorOnPrimary">@android:color/white</item>
+        
+        <!-- Secondary colors -->
+        <item name="colorSecondary">#FF82A8E7</item>
+        <item name="colorSecondaryVariant">#FF82A8E7</item>
+        <item name="colorOnSecondary">@android:color/white</item>
+        
+        <!-- Status bar -->
+        <item name="android:statusBarColor">#FF202124</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:windowTranslucentStatus">false</item>
+        <item name="android:windowLightStatusBar">false</item>
+        
+        <!-- Window properties -->
+        <item name="android:windowNoTitle">true</item>
+        <item name="windowActionBar">false</item>
+        <item name="android:windowActionBar">false</item>
+        
+        <!-- Text colors for dark theme -->
+        <item name="android:textColorPrimary">#FFFFFFFF</item>
+        <item name="android:textColorSecondary">#FFBDC1C6</item>
+        <item name="colorControlNormal">#FFFFFFFF</item>
+    </style>
+</resources>

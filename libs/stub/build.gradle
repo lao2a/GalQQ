@@ -1,0 +1,35 @@
+plugins {
+    id 'com.android.library'
+}
+
+android {
+    namespace 'me.galqq.stub'
+    compileSdk 34
+
+    defaultConfig {
+        minSdk 24
+        targetSdk 34
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+    
+    sourceSets {
+        main {
+            manifest.srcFile 'AndroidManifest.xml'
+            java.srcDirs = ['qq-stub/src/main/java']
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
+dependencies {
+    compileOnly 'androidx.annotation:annotation:1.7.0'
+}

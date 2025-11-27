@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- AI Provider选项 -->
+    <string-array name="ai_provider_names">
+        <item>OpenAI</item>
+        <item>Kimi</item>
+        <item>DeepSeek</item>
+        <item>Qwen</item>
+        <item>GLM</item>
+        <item>Ollama</item>
+    </string-array>
+    
+    <string-array name="ai_provider_values">
+        <item>openai</item>
+        <item>kimi</item>
+        <item>deepseek</item>
+        <item>qwen</item>
+        <item>glm</item>
+        <item>ollama</item>
+    </string-array>
+    
+    <string-array name="filter_mode_names">
+        <item>黑名单模式</item>
+        <item>白名单模式</item>
+    </string-array>
+    <string-array name="filter_mode_values">
+        <item>blacklist</item>
+        <item>whitelist</item>
+    </string-array>
+</resources>

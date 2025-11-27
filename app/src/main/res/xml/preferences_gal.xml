@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <SwitchPreference
+        android:key="gal_enabled"
+        android:title="@string/gal_enabled_title"
+        android:summary="@string/gal_enabled_summary"
+        android:defaultValue="true" />
+
+    <PreferenceCategory android:title="@string/gal_ai_cat_title">
+        <SwitchPreference
+            android:key="gal_ai_enabled"
+            android:title="@string/gal_ai_enabled_title"
+            android:summary="@string/gal_ai_enabled_summary"
+            android:defaultValue="false" />
+
+        <EditTextPreference
+            android:key="gal_sys_prompt"
+            android:title="@string/gal_sys_prompt_title"
+            android:summary="@string/gal_sys_prompt_summary"
+            android:defaultValue="You are playing a Galgame character. Based on the user's message, give 3 short, character-consistent response options separated by |||."
+           android:dialogMessage="@string/gal_sys_prompt_dialog"
+            android:lines="4"
+            android:inputType="textMultiLine" />
+
+        <EditTextPreference
+            android:key="gal_api_url"
+            android:title="@string/gal_api_url_title"
+            android:summary="@string/gal_api_url_summary"
+            android:defaultValue="" />
+
+        <EditTextPreference
+            android:key="gal_api_key"
+            android:title="@string/gal_api_key_title"
+            android:summary="@string/gal_api_key_summary"
+            android:inputType="textPassword"
+            android:defaultValue="" />
+        
+        <EditTextPreference
+            android:key="gal_ai_model"
+            android:title="@string/gal_ai_model_title"
+            android:summary="@string/gal_ai_model_summary"
+            android:defaultValue="gpt-3.5-turbo" />
+        
+        <ListPreference
+            android:key="gal_ai_provider"
+            android:title="@string/gal_ai_provider_title"
+            android:summary="@string/gal_ai_provider_summary"
+            android:entries="@array/ai_provider_names"
+            android:entryValues="@array/ai_provider_values"
+            android:defaultValue="openai" />
+        
+        <EditTextPreference
+            android:key="gal_ai_temperature"
+            android:title="@string/gal_ai_temperature_title"
+            android:summary="@string/gal_ai_temperature_summary"
+            android:inputType="numberDecimal"
+            android:defaultValue="0.8" />
+        
+        <EditTextPreference
+            android:key="gal_ai_max_tokens"
+            android:title="@string/gal_ai_max_tokens_title"
+            android:summary="@string/gal_ai_max_tokens_summary"
+            android:inputType="number"
+            android:defaultValue="120" />
+        
+        <Preference
+            android:key="gal_test_api"
+            android:title="@string/gal_test_api_title"
+            android:summary="@string/gal_test_api_summary" />
+        
+        <SwitchPreference
+            android:key="gal_verbose_log"
+            android:title="详细日志"
+            android:summary="记录完整的API请求包（包含Headers和Body）"
+            android:defaultValue="false" />
+        
+        
+        <Preference
+            android:key="gal_ai_log"
+            android:title="@string/gal_ai_log_title"
+            android:summary="@string/gal_ai_log_summary" />
+        
+        <SwitchPreference
+            android:key="context_enabled"
+            android:title="启用对话上下文"
+            android:summary="发送历史消息给AI，生成更贴合语境的回复"
+            android:defaultValue="true" />
+        
+        <EditTextPreference
+            android:key="context_message_count"
+            android:title="上下文消息数"
+            android:summary="发送给AI的历史消息条数（1-20）"
+            android:inputType="number"
+            android:defaultValue="10" />
+    </PreferenceCategory>
+
+    <PreferenceCategory android:title="过滤设置">
+        <ListPreference
+            android:key="gal_filter_mode"
+            android:title="过滤模式"
+            android:entries="@array/filter_mode_names"
+            android:entryValues="@array/filter_mode_values"
+            android:defaultValue="blacklist"
+            android:summary="选择黑名单或白名单模式" />
+        
+        <EditTextPreference
+            android:key="gal_blacklist"
+            android:title="黑名单"
+            android:summary="不显示选项条的QQ号（逗号分隔）"
+            android:defaultValue="" />
+        
+        <EditTextPreference
+            android:key="gal_whitelist"
+            android:title="白名单"
+            android:summary="仅显示选项条的QQ号（逗号分隔）"
+            android:defaultValue="" />
+    </PreferenceCategory>
+
+    <PreferenceCategory android:title="@string/gal_dict_cat_title">
+        <EditTextPreference
+            android:key="gal_dict_path"
+            android:title="@string/gal_dict_path_title"
+            android:summary="@string/gal_dict_path_summary"
+            android:defaultValue="" />
+    </PreferenceCategory>
+
+    <PreferenceCategory android:title="@string/gal_about_cat_title">
+        <Preference
+            android:key="gal_contact"
+            android:title="@string/gal_contact_title"
+            android:summary="@string/gal_contact_summary" />
+    </PreferenceCategory>
+
+</PreferenceScreen>
