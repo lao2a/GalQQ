@@ -7,6 +7,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
+import android.widget.ProgressBar;
 import android.widget.RelativeLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -16,9 +17,12 @@ import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
 import top.galqq.config.ConfigManager;
-import top.galqq.utils.AiRequestQueue;
+import top.galqq.utils.AiRateLimitedQueue;
 import top.galqq.utils.DictionaryManager;
 import top.galqq.utils.HttpAiClient;
+import top.galqq.utils.MessageContextManager;
+import top.galqq.utils.QAppUtils;
+import java.lang.reflect.Field;
 import top.galqq.utils.SendMessageHelper;
 
 public class MessageInterceptor {
@@ -114,7 +118,7 @@ public class MessageInterceptor {
                             LinearLayout existingBar = baseChatItemLayout.findViewById(OPTION_BAR_ID);
                             existingBar.removeAllViews();
                             String msgContent = (String) XposedHelpers.getObjectField(chatMessage, "msg");
-                            setupOptionBarContent(context, existingBar, msgContent, chatMessage, null);
+                            setupOptionBarContent(context, existingBar, msgContent, chatMessage, null, null);
                             return;
                         }
                         
@@ -161,44 +165,169 @@ public class MessageInterceptor {
         bar.setPadding(0, dp2px(context, 5), 0, dp2px(context, 5));
         
         String msgContent = (String) XposedHelpers.getObjectField(chatMessage, "msg");
-        setupOptionBarContent(context, bar, msgContent, chatMessage, null);
+        setupOptionBarContent(context, bar, msgContent, chatMessage, null, null);
         return bar;
     }
     
     private static void updateOptionBar(Context context, LinearLayout bar, Object chatMessage) {
         String msgContent = (String) XposedHelpers.getObjectField(chatMessage, "msg");
         bar.removeAllViews();
-        setupOptionBarContent(context, bar, msgContent, chatMessage, null);
+        setupOptionBarContent(context, bar, msgContent, chatMessage, null, null);
     }
 
-    private static void setupOptionBarContent(Context context, LinearLayout bar, String msgContent, Object msgObj, String msgId) {
-        if (ConfigManager.isAiEnabled()) {
-            // AI模式：调用AI并缓存结果
-            HttpAiClient.fetchOptions(context, msgContent, new HttpAiClient.AiCallback() {
-                @Override
-                public void onSuccess(List<String> options) {
-                    if (context instanceof Activity) {
-                        ((Activity) context).runOnUiThread(() -> {
-                            // 缓存AI结果（仅在AI模式下缓存）
-                            if (msgId != null) {
-                                optionsCache.put(msgId, new java.util.ArrayList<>(options));
-                                XposedBridge.log(TAG + ": Cached AI options for msgId=" + msgId);
-                            }
-                            populateBarAndShow(context, bar, options, msgObj);
-                        });
-                    }
-                }
+    // 公开缓存方法供队列恢复时使用
+    public static void cacheOptions(String msgId, List<String> options) {
+        if (msgId != null && options != null) {
+            optionsCache.put(msgId, new java.util.ArrayList<>(options));
+            // XposedBridge.log(TAG + ": Cached AI options for msgId=" + msgId);
+        }
+    }
 
+    private static void setupOptionBarContent(Context context, LinearLayout bar, String msgContent, 
+                                               Object msgObj, String msgId, String conversationId) {
+        if (ConfigManager.isAiEnabled()) {
+            // 添加加载指示器 (Loading Text)
+            bar.removeAllViews();
+            // 加载时减少顶部间距，使其更贴近消息
+            bar.setPadding(0, 0, 0, dp2px(context, 5));
+            
+            TextView tvLoading = new TextView(context);
+            tvLoading.setText("加载中");
+            tvLoading.setTextSize(12); // 小字体
+            tvLoading.setTextColor(Color.parseColor("#999999")); // 浅灰色
+            
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, 
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            );
+            lp.gravity = Gravity.START | Gravity.CENTER_VERTICAL;
+            lp.leftMargin = dp2px(context, 2); // 稍微偏移一点
+            tvLoading.setLayoutParams(lp);
+            
+            bar.addView(tvLoading);
+            bar.setVisibility(View.VISIBLE);
+
+            // 启动呼吸动画 "..." (变长变短)
+            final android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
+            final Runnable animator = new Runnable() {
+                int count = 0;
                 @Override
-                public void onFailure(Exception e) {
-                    // AI失败时隐藏选项条
-                    if (context instanceof Activity) {
-                        ((Activity) context).runOnUiThread(() -> {
-                            bar.setVisibility(View.GONE);
-                        });
+                public void run() {
+                    // 检查View是否还在显示，如果已被移除或隐藏则停止动画
+                    if (tvLoading.getParent() == null || bar.getVisibility() != View.VISIBLE) {
+                        return;
+                    }
+                    
+                    StringBuilder sb = new StringBuilder("加载中");
+                    // 动画逻辑：0->1->2->3->2->1->0 (循环)
+                    int phase = count % 6;
+                    int dots = phase <= 3 ? phase : 6 - phase;
+                    
+                    for (int i = 0; i < dots; i++) sb.append(".");
+                    tvLoading.setText(sb.toString());
+                    
+                    count++;
+                    handler.postDelayed(this, 400); // 400ms刷新一次
+                }
+            };
+            handler.postDelayed(animator, 400);
+            
+            // 获取上下文消息（如果启用）
+            List<MessageContextManager.ChatMessage> contextMessages = null;
+            if (ConfigManager.isContextEnabled() && conversationId != null) {
+                int contextCount = ConfigManager.getContextMessageCount();
+                // 多获取一条，以便如果最后一条是当前消息时移除
+                contextMessages = MessageContextManager.getContext(conversationId, contextCount + 1);
+                
+                // 去除当前消息（如果它已经被存入上下文）
+                if (!contextMessages.isEmpty()) {
+                    MessageContextManager.ChatMessage lastMsg = contextMessages.get(contextMessages.size() - 1);
+                    // 通过msgId判断（如果msgId不为空）
+                    boolean isSameMsg = false;
+                    if (msgId != null && lastMsg.msgId != null) {
+                        if (msgId.equals(lastMsg.msgId)) {
+                            isSameMsg = true;
+                        }
+                    } else {
+                        // 降级：通过内容和时间戳判断（防止重复）
+                        // 如果内容相同且时间差在1秒内
+                        if (msgContent.equals(lastMsg.content) && 
+                            Math.abs(System.currentTimeMillis() - lastMsg.timestamp) < 1000) {
+                            isSameMsg = true;
+                        }
+                    }
+                    
+                    if (isSameMsg) {
+                        contextMessages.remove(contextMessages.size() - 1);
+                        // XposedBridge.log("Removed current message from context to avoid duplication");
                     }
                 }
-            });
+                
+                // 确保数量不超过配置
+                if (contextMessages.size() > contextCount) {
+                    contextMessages = contextMessages.subList(contextMessages.size() - contextCount, contextMessages.size());
+                }
+            }
+
+            // 判断选项条是否在屏幕可见区域（用于设置优先级）
+            android.graphics.Rect rect = new android.graphics.Rect();
+            boolean isVisible = bar.getGlobalVisibleRect(rect) && bar.isShown();
+            AiRateLimitedQueue.Priority priority = isVisible ? 
+                AiRateLimitedQueue.Priority.HIGH : 
+                AiRateLimitedQueue.Priority.NORMAL;
+            
+            // 【新增】提取当前消息的元数据（发送人昵称和时间戳）
+            String currentSenderName = null;
+            long currentTimestamp = 0;
+            try {
+                // 尝试从msgObj（msgRecord）提取senderName
+                Object remarkNameObj = XposedHelpers.getObjectField(msgObj, "sendRemarkName");
+                if (remarkNameObj != null && !String.valueOf(remarkNameObj).trim().isEmpty()) {
+                    currentSenderName = String.valueOf(remarkNameObj);
+                } else {
+                    Object nickNameObj = XposedHelpers.getObjectField(msgObj, "sendNickName");
+                    if (nickNameObj != null) {
+                        currentSenderName = String.valueOf(nickNameObj);
+                    }
+                }
+                
+                // 提取时间戳
+                Object msgTimeObj = XposedHelpers.getObjectField(msgObj, "msgTime");
+                if (msgTimeObj != null) {
+                    currentTimestamp = Long.parseLong(String.valueOf(msgTimeObj)) * 1000L; // 秒转毫秒
+                }
+            } catch (Throwable t) {
+                // 提取失败，使用默认值（null和0）
+                XposedBridge.log(TAG + ": Failed to extract current message metadata: " + t.getMessage());
+            }
+            
+            // 提交到限流队列（带优先级、上下文和当前消息元数据）
+            AiRateLimitedQueue.getInstance(context).submitRequest(
+                context, 
+                msgContent, 
+                msgId, // 传递msgId用于持久化
+                priority,
+                contextMessages, // 传递上下文消息
+                currentSenderName, // 当前消息发送人昵称
+                currentTimestamp, // 当前消息时间戳
+                new HttpAiClient.AiCallback() {
+                    @Override
+                    public void onSuccess(List<String> options) {
+                        // 恢复顶部间距
+                        bar.setPadding(0, dp2px(context, 5), 0, dp2px(context, 5));
+                        
+                        // 缓存AI结果
+                        cacheOptions(msgId, options);
+                        populateBarAndShow(context, bar, options, msgObj);
+                    }
+
+                    @Override
+                    public void onFailure(Exception e) {
+                        // AI失败时隐藏选项条（已在UI线程）
+                        bar.setVisibility(View.GONE);
+                    }
+                }
+            );
         } else {
             // 本地词库模式：每次随机生成，不使用缓存
             useDictionaryNT(context, bar, msgObj);
@@ -215,11 +344,15 @@ public class MessageInterceptor {
     private static void populateBarAndShow(Context context, LinearLayout bar, List<String> options, Object chatMessage) {
         bar.removeAllViews();
         
+        XposedBridge.log(TAG + ": populateBarAndShow - options count=" + (options != null ? options.size() : "null"));
+        
         if (options == null || options.isEmpty()) {
+            XposedBridge.log(TAG + ": No options available, hiding bar");
             bar.setVisibility(View.GONE); // 没有选项时隐藏
             return;
         }
         
+        XposedBridge.log(TAG + ": Adding " + options.size() + " options to bar");
         for (String option : options) {
             TextView tv = new TextView(context);
             tv.setText(option);
@@ -247,6 +380,7 @@ public class MessageInterceptor {
         }
         
         bar.setVisibility(View.VISIBLE); // 有选项时显示
+        XposedBridge.log(TAG + ": Option bar populated and made visible");
     }
 
 
@@ -399,6 +533,74 @@ public class MessageInterceptor {
             Context context = rootView.getContext();
             ConfigManager.init(context);
             
+            // 【方法1】识别 Activity/Context 类型
+            try {
+                String activityName = "unknown";
+                if (context instanceof Activity) {
+                    activityName = context.getClass().getName();
+                } else {
+                    // 尝试解包 ContextWrapper
+                    Context currentCtx = context;
+                    while (currentCtx instanceof android.content.ContextWrapper) {
+                        if (currentCtx instanceof Activity) {
+                            activityName = currentCtx.getClass().getName();
+                            break;
+                        }
+                        currentCtx = ((android.content.ContextWrapper) currentCtx).getBaseContext();
+                    }
+                }
+                // XposedBridge.log(TAG + ": [Context] Activity/Context: " + activityName);
+                
+                // 【转发消息过滤】如果是转发消息详情页，则不显示AI选项条
+                if (activityName != null && activityName.contains("MultiForwardActivity")) {
+                    XposedBridge.log(TAG + ": ⚠️ Skipping forwarded message in MultiForwardActivity");
+                    return;
+                }
+            } catch (Throwable t) {
+                // XposedBridge.log(TAG + ": [Context] Error getting activity: " + t.getMessage());
+            }
+            
+            // 【方法2】识别 ViewHolder 类型
+            try {
+                String viewHolderName = aioBubbleMsgItemVB.getClass().getName();
+                // XposedBridge.log(TAG + ": [ViewHolder] Type: " + viewHolderName);
+            } catch (Throwable t) {
+                // XposedBridge.log(TAG + ": [ViewHolder] Error: " + t.getMessage());
+            }
+            
+            // 【方法3】识别 RecyclerView 的 Adapter 类型 (使用反射)
+            try {
+                android.view.ViewParent parent = rootView.getParent();
+                boolean foundRecyclerView = false;
+                while (parent != null) {
+                    Class<?> parentClass = parent.getClass();
+                    // 检查是否是 RecyclerView (通过类名判断，避免依赖)
+                    if (isRecyclerView(parentClass)) {
+                        foundRecyclerView = true;
+                        // 反射调用 getAdapter
+                        try {
+                            Method getAdapterMethod = parentClass.getMethod("getAdapter");
+                            Object adapter = getAdapterMethod.invoke(parent);
+                            if (adapter != null) {
+                                // XposedBridge.log(TAG + ": [Adapter] Type: " + adapter.getClass().getName());
+                            } else {
+                                // XposedBridge.log(TAG + ": [Adapter] Adapter is null");
+                            }
+                        } catch (NoSuchMethodException e) {
+                            // 可能是混淆后的名字，或者不是标准的RecyclerView
+                            // XposedBridge.log(TAG + ": [Adapter] getAdapter method not found on " + parentClass.getName());
+                        }
+                        break;
+                    }
+                    parent = parent.getParent();
+                }
+                if (!foundRecyclerView) {
+                    // XposedBridge.log(TAG + ": [Adapter] RecyclerView not found in parent hierarchy");
+                }
+            } catch (Throwable t) {
+                XposedBridge.log(TAG + ": [Adapter] Error: " + t.getMessage());
+            }
+            
             // Check if module is enabled
             if (!ConfigManager.isModuleEnabled()) {
                 return; // Module is disabled, don't show option bar
@@ -406,10 +608,32 @@ public class MessageInterceptor {
             
             // Check if it's a received message
             int sendType = XposedHelpers.getIntField(msgRecord, "sendType");
-            if (sendType != 0) return; // Not a received message
+            boolean isSelf = (sendType == 1); // 1=自己发送, 0=收到的消息
 
             // Filter out unwanted message types
             int msgType = XposedHelpers.getIntField(msgRecord, "msgType");
+            
+            // 【调试日志】打印消息类型相关字段，用于识别转发聊天记录
+            try {
+                int subMsgType = XposedHelpers.getIntField(msgRecord, "subMsgType");
+                
+                XposedBridge.log(TAG + ": ===== Message Type Analysis =====");
+                XposedBridge.log(TAG + ": msgType=" + msgType + ", subMsgType=" + subMsgType);
+                XposedBridge.log(TAG + ": sendType=" + sendType);
+                
+                // 【过滤转发聊天记录容器】msgType=11且subMsgType=7是转发聊天记录的容器消息
+                // 不过滤容器内的具体Text消息（msgType=2），因为它们的字段与普通消息相同
+                if (msgType == 11 && subMsgType == 7) {
+                    XposedBridge.log(TAG + ": ⚠️ FORWARDED CHAT RECORD CONTAINER - SKIPPING!");
+                    XposedBridge.log(TAG + ": ================================");
+                    return; // 跳过转发聊天记录容器
+                }
+                
+                XposedBridge.log(TAG + ": ================================");
+            } catch (Throwable t) {
+                XposedBridge.log(TAG + ": Error detecting forwarded message: " + t.getMessage());
+            }
+            
             // 5 = Gray Tips (Revoke), 3 = File, 7 = Video
             if (msgType == 5 || msgType == 3 || msgType == 7) {
                 return;
@@ -428,9 +652,10 @@ public class MessageInterceptor {
             }
             
             // 黑白名单过滤
+            String senderUin = null;
             try {
                 Object senderUinObj = XposedHelpers.getObjectField(msgRecord, "senderUin");
-                String senderUin = String.valueOf(senderUinObj);
+                senderUin = String.valueOf(senderUinObj);
                 String filterMode = ConfigManager.getFilterMode();
                 
                 // XposedBridge.log(TAG + ": Filter - senderUin=" + senderUin + ", mode=" + filterMode);
@@ -447,13 +672,21 @@ public class MessageInterceptor {
                     }
                 }
                 // XposedBridge.log(TAG + ": ✓ PASSED filter: " + senderUin);
+                
+                // 【详细调试日志】在提取到所有变量后输出
+                XposedBridge.log(TAG + ": isSelf=" + isSelf);
+                XposedBridge.log(TAG + ": senderUin=" + senderUin);
+                if (msgContent != null && !msgContent.isEmpty()) {
+                    String contentPreview = msgContent.length() > 50 ? msgContent.substring(0, 50) + "..." : msgContent;
+                    XposedBridge.log(TAG + ": msgContent=" + contentPreview);
+                }
             } catch (Throwable t) {
                 XposedBridge.log(TAG + ": Error filtering by list: " + t.getMessage());
                 XposedBridge.log(t);
                 return; // 过滤失败时不添加选项条
             }
             
-            // 获取消息ID（用于AI缓存，不用于View管理）
+            // 获取消息ID（用于AI缓存和上下文去重）
             String msgId = null;
             try {
                 Object msgIdObj = XposedHelpers.getObjectField(msgRecord, "msgId");
@@ -462,32 +695,248 @@ public class MessageInterceptor {
                 XposedBridge.log(TAG + ": Failed to get msgId: " + t.getMessage());
             }
             
-            // 创建新选项条（每次都重新创建，不复用View）
-            LinearLayout optionBar = createEmptyOptionBarNT(context);
-            optionBar.setId(OPTION_BAR_ID);
-            
-            // 先添加选项条到布局（空的，稍后异步填充内容）
-            // XposedBridge.log(TAG + ": RootView class: " + rootView.getClass().getName());
-            Class<?> constraintLayoutClass = null;
+            // 保存消息到上下文缓存（带去重）
+            String peerUin = null; // 提升作用域
+            long msgTime = 0; // 【修复】提升作用域，供后续AI判断使用
             try {
-                constraintLayoutClass = XposedHelpers.findClass("androidx.constraintlayout.widget.ConstraintLayout", context.getClassLoader());
-            } catch (Throwable t) {
-                // Ignore if class not found
-            }
+                // 获取发送人昵称（优先使用备注名，其次QQ昵称）
+                String senderName = null;
+                try {
+                    // 优先尝试获取备注名
+                    Object remarkNameObj = XposedHelpers.getObjectField(msgRecord, "sendRemarkName");
+                    if (remarkNameObj != null && !String.valueOf(remarkNameObj).trim().isEmpty()) {
+                        senderName = String.valueOf(remarkNameObj);
+                    } else {
+                        // 备注名为空，尝试获取QQ昵称
+                        Object nickNameObj = XposedHelpers.getObjectField(msgRecord, "sendNickName");
+                        if (nickNameObj != null && !String.valueOf(nickNameObj).trim().isEmpty()) {
+                            senderName = String.valueOf(nickNameObj);
+                        }
+                    }
+                } catch (Throwable t) {
+                    // 字段获取失败
+                    XposedBridge.log(TAG + ": Failed to get sender name: " + t.getMessage());
+                }
+                
+                // 如果所有尝试都失败，使用UIN
+                if (senderName == null || senderName.trim().isEmpty()) {
+                    senderName = senderUin != null ? senderUin : "未知";
+                }
+                
+                // 获取peerUin（会话ID）
+                try {
+                    Object peerUinObj = XposedHelpers.getObjectField(msgRecord, "peerUin");
+                    peerUin = String.valueOf(peerUinObj);
+                } catch (Throwable t) {
+                    XposedBridge.log(TAG + ": Failed to get peerUin: " + t.getMessage());
+                }
 
-            if (constraintLayoutClass != null && constraintLayoutClass.isAssignableFrom(rootView.getClass())) {
-                // XposedBridge.log(TAG + ": RootView is a ConstraintLayout (or subclass)");
-                handleConstraintLayout(context, rootView, optionBar, msgRecord);
-            } else if (rootView.getClass().getName().contains("ConstraintLayout")) {
-                // XposedBridge.log(TAG + ": RootView name contains ConstraintLayout");
-                handleConstraintLayout(context, rootView, optionBar, msgRecord);
-            } else {
-                // XposedBridge.log(TAG + ": RootView is NOT identified as ConstraintLayout, using legacy handler");
-                handleLegacyLayout(context, rootView, optionBar);
+                // 使用peerUin作为conversationId（群聊时为群号，私聊时为对方QQ）
+                // 这样可以确保群聊中不同用户的消息被聚合到同一个上下文中
+                if (peerUin != null && !msgContent.isEmpty()) {
+                    // 获取消息时间戳
+                    try {
+                        Object msgTimeObj = XposedHelpers.getObjectField(msgRecord, "msgTime");
+                        if (msgTimeObj != null) {
+                            // msgTime通常是秒，转换为毫秒
+                            msgTime = Long.parseLong(String.valueOf(msgTimeObj)) * 1000L;
+                        }
+                    } catch (Throwable t) {
+                        // 失败则使用当前时间（降级）
+                        msgTime = System.currentTimeMillis();
+                    }
+                    
+                    // 【新增】提取引用回复的内容并整合到消息
+                    try {
+                        List<?> elements = (List<?>) XposedHelpers.getObjectField(msgRecord, "elements");
+                        if (elements != null && !elements.isEmpty()) {
+                            // 【调试】输出元素列表信息
+                            XposedBridge.log(TAG + ": Elements count: " + elements.size());
+                            for (int i = 0; i < elements.size(); i++) {
+                                Object element = elements.get(i);
+                                XposedBridge.log(TAG + ":   [" + i + "] " + element.getClass().getSimpleName());
+                                
+                                // 尝试所有可能的引用字段名
+                                for (String fieldName : new String[]{"replyElement", "g", "h"}) {
+                                    try {
+                                        Object field = XposedHelpers.getObjectField(element, fieldName);
+                                        if (field != null) {
+                                            XposedBridge.log(TAG + ":     ." + fieldName + " exists: " + field.getClass().getSimpleName());
+                                        }
+                                    } catch (Throwable ignored) {}
+                                }
+                            }
+                            
+                            for (Object element : elements) {
+                                try {
+                                    // 尝试获取replyElement
+                                    Object replyElement = XposedHelpers.getObjectField(element, "replyElement");
+                                    if (replyElement != null) {
+                                        // 提取引用的消息文本
+                                        String replyText = null;
+                                        try {
+                                            Object replyTextObj = XposedHelpers.getObjectField(replyElement, "sourceMsgText");
+                                            if (replyTextObj != null) {
+                                                replyText = String.valueOf(replyTextObj);
+                                            }
+                                        } catch (Throwable ignored) {}
+                                        
+                                        // 提取引用消息的发送人
+                                        String replySenderName = null;
+                                        try {
+                                            Object senderShowNameObj = XposedHelpers.getObjectField(replyElement, "senderShowName");
+                                            if (senderShowNameObj != null) {
+                                                replySenderName = String.valueOf(senderShowNameObj);
+                                            }
+                                        } catch (Throwable ignored) {}
+                                        
+                                        // 降级策略1：尝试从当前消息内容中解析 "@昵称 "
+                                        if (replySenderName == null && msgContent != null) {
+                                            String trimmedContent = msgContent.trim();
+                                            if (trimmedContent.startsWith("@")) {
+                                                int spaceIndex = trimmedContent.indexOf(' ');
+                                                if (spaceIndex > 1) {
+                                                    // 提取 @ 和 空格 之间的内容作为名字
+                                                    String potentialName = trimmedContent.substring(1, spaceIndex);
+                                                    // 简单的合法性检查（避免提取到过长的错误内容）
+                                                    if (potentialName.length() < 20) {
+                                                        replySenderName = potentialName;
+                                                        // XposedBridge.log(TAG + ": Extracted reply sender from content: " + replySenderName);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        
+                                        // 降级策略2：使用 senderUid
+                                        if (replySenderName == null) {
+                                            try {
+                                                long senderUid = XposedHelpers.getLongField(replyElement, "senderUid");
+                                                if (senderUid > 0) {
+                                                    replySenderName = String.valueOf(senderUid);
+                                                } else {
+                                                    // 尝试 senderUidStr
+                                                    Object senderUidStrObj = XposedHelpers.getObjectField(replyElement, "senderUidStr");
+                                                    if (senderUidStrObj != null) {
+                                                        replySenderName = String.valueOf(senderUidStrObj);
+                                                    }
+                                                }
+                                            } catch (Throwable ignored) {}
+                                        }
+                                        
+                                        // 最终兜底
+                                        if (replySenderName == null) {
+                                            replySenderName = "某人";
+                                        }
+                                        
+                                        // 如果成功提取引用内容，整合到当前消息内容中
+                                        if (replyText != null && !replyText.trim().isEmpty()) {
+                                            if (replySenderName == null || replySenderName.trim().isEmpty()) {
+                                                replySenderName = "某人";
+                                            }
+                                            
+                                            // 将引用信息附加到消息内容
+                                            // 格式: 原消息内容 (回复 @被引用者: "被引用内容")
+                                            msgContent = msgContent + " (回复 @" + replySenderName + ": \"" + replyText + "\")";
+                                            
+                                            XposedBridge.log(TAG + ": ✓ 已将引用信息整合到消息内容");
+                                        }
+                                        break; // 只处理第一个replyElement
+                                    }
+                                } catch (Throwable ignored) {
+                                    // replyElement字段不存在或获取失败，继续下一个element
+                                }
+                            }
+                        }
+                    } catch (Throwable t) {
+                        XposedBridge.log(TAG + ": Error extracting reply content: " + t.getMessage());
+                    }
+                    
+                    // 【修改自己消息的显示格式为"昵称[我]"】
+                    if (isSelf && senderName != null && !senderName.isEmpty()) {
+                        senderName = senderName + "[我]";
+                    }
+                    
+                    MessageContextManager.addMessage(peerUin, senderName, msgContent, isSelf, msgId, msgTime);
+                }
+            } catch (Throwable t) {
+                XposedBridge.log(TAG + ": Error saving message to context: " + t.getMessage());
             }
             
-            // 填充选项条内容（本地词库或AI）
-            fillOptionBarContent(context, optionBar, msgRecord, msgId);
+            // 【只为对方消息创建选项栏，自己的消息不显示UI】
+            if (!isSelf) {
+                // 【关键修复】防止加载历史记录时触发AI刷屏
+                // 动态获取配置的阈值（秒转毫秒）
+                int thresholdSeconds = ConfigManager.getHistoryThreshold();
+                long thresholdMs = thresholdSeconds * 1000L;
+                
+                // 检查是否已缓存AI选项（如果有缓存，即使超过阈值也显示）
+                boolean hasCachedOptions = (msgId != null && optionsCache.containsKey(msgId));
+                
+                long currentTime = System.currentTimeMillis();
+                if (!hasCachedOptions && Math.abs(currentTime - msgTime) > thresholdMs) {
+                    // XposedBridge.log(TAG + ": ⏳ Skipping option bar for old message without cache (diff=" + (currentTime - msgTime) + "ms)");
+                    return; 
+                }
+
+
+                // 检查是否自动显示选项
+                boolean autoShow = ConfigManager.isAutoShowOptionsEnabled();
+                String conversationId = (peerUin != null && !peerUin.isEmpty()) ? peerUin : senderUin;
+                
+                // 调试日志：检查自动显示配置状态
+                // XposedBridge.log(TAG + ": AutoShowOptions check - enabled=" + autoShow + 
+                //     ", conversationId=" + conversationId + 
+                //     ", msgId=" + msgId + 
+                //     ", hasCache=" + (msgId != null && optionsCache.containsKey(msgId)) +
+                //     ", isSelf=" + isSelf);
+                
+                if (autoShow) {
+                    // 自动显示模式：创建选项条并立即填充
+                    // XposedBridge.log(TAG + ": AutoShow mode - creating option bar");
+                    LinearLayout optionBar = createEmptyOptionBarNT(context);
+                    optionBar.setId(OPTION_BAR_ID);
+                    
+                    Class<?> constraintLayoutClass = null;
+                    try {
+                        constraintLayoutClass = XposedHelpers.findClass("androidx.constraintlayout.widget.ConstraintLayout", context.getClassLoader());
+                    } catch (Throwable t) {
+                        // Ignore if class not found
+                    }
+
+                    if (constraintLayoutClass != null && constraintLayoutClass.isAssignableFrom(rootView.getClass())) {
+                        // XposedBridge.log(TAG + ": Using ConstraintLayout handler");
+                        handleConstraintLayout(context, rootView, optionBar, msgRecord);
+                    } else if (rootView.getClass().getName().contains("ConstraintLayout")) {
+                        // XposedBridge.log(TAG + ": Using ConstraintLayout handler (fallback)");
+                        handleConstraintLayout(context, rootView, optionBar, msgRecord);
+                    } else {
+                        // XposedBridge.log(TAG + ": Using LegacyLayout handler");
+                        handleLegacyLayout(context, rootView, optionBar);
+                    }
+                    
+                    // XposedBridge.log(TAG + ": Filling option bar content");
+                    fillOptionBarContent(context, optionBar, msgRecord, msgId, conversationId);
+                    // XposedBridge.log(TAG + ": AutoShow option bar created and filled successfully");
+                } else {
+                    // 按需显示模式：仅显示按钮
+                    View button = createShowOptionsButton(context, msgRecord, msgId, conversationId, rootView);
+                    
+                    Class<?> constraintLayoutClass = null;
+                    try {
+                        constraintLayoutClass = XposedHelpers.findClass("androidx.constraintlayout.widget.ConstraintLayout", context.getClassLoader());
+                    } catch (Throwable t) {
+                        // Ignore if class not found
+                    }
+
+                    if (constraintLayoutClass != null && constraintLayoutClass.isAssignableFrom(rootView.getClass())) {
+                        handleConstraintLayout(context, rootView, button, msgRecord);
+                    } else if (rootView.getClass().getName().contains("ConstraintLayout")) {
+                        handleConstraintLayout(context, rootView, button, msgRecord);
+                    } else {
+                        handleLegacyLayout(context, rootView, button);
+                    }
+                }
+            }
             
             // XposedBridge.log(TAG + ": Successfully added option bar to QQNT message");
 
@@ -660,20 +1109,78 @@ public class MessageInterceptor {
         return bar;
     }
     
+    // 创建"显示选项"按钮
+    private static View createShowOptionsButton(
+        Context context, 
+        Object msgRecord, 
+        String msgId, 
+        String conversationId,
+        ViewGroup rootView
+    ) {
+        TextView button = new TextView(context);
+        button.setText("显示选项");
+        button.setTextSize(12);
+        button.setPadding(dp2px(context, 10), dp2px(context, 6), dp2px(context, 10), dp2px(context, 6));
+        button.setBackground(getRoundedBackground(Color.parseColor("#E8E8E8"), dp2px(context, 10)));
+        button.setTextColor(Color.parseColor("#666666"));
+        button.setGravity(Gravity.CENTER);
+        
+        button.setOnClickListener(v -> {
+            // 移除按钮
+            ((ViewGroup)button.getParent()).removeView(button);
+            
+            // 创建选项条并填充
+            LinearLayout optionBar = createEmptyOptionBarNT(context);
+            optionBar.setId(OPTION_BAR_ID);
+            
+            // 添加到相同位置
+            Class<?> constraintLayoutClass = null;
+            try {
+                constraintLayoutClass = XposedHelpers.findClass(
+                    "androidx.constraintlayout.widget.ConstraintLayout", 
+                    context.getClassLoader()
+                );
+            } catch (Throwable t) {
+                // Ignore
+            }
+            
+            if (constraintLayoutClass != null && constraintLayoutClass.isAssignableFrom(rootView.getClass())) {
+                handleConstraintLayout(context, rootView, optionBar, msgRecord);
+            } else if (rootView.getClass().getName().contains("ConstraintLayout")) {
+                handleConstraintLayout(context, rootView, optionBar, msgRecord);
+            } else {
+                handleLegacyLayout(context, rootView, optionBar);
+            }
+            
+            // 填充选项
+            fillOptionBarContent(context, optionBar, msgRecord, msgId, conversationId);
+        });
+        
+        button.setId(OPTION_BAR_ID); // 使用相同ID避免冲突
+        return button;
+    }
+    
     // 填充选项条内容（AI或本地词库）
-    private static void fillOptionBarContent(Context context, LinearLayout bar, Object msgRecord, String msgId) {
+    private static void fillOptionBarContent(Context context, LinearLayout bar, Object msgRecord, 
+                                             String msgId, String conversationId) {
         String msgContent = getMessageContentNT(msgRecord);
+        
+        // XposedBridge.log(TAG + ": fillOptionBarContent - msgId=" + msgId + 
+        //     ", aiEnabled=" + ConfigManager.isAiEnabled() + 
+        //     ", hasCache=" + (msgId != null && optionsCache.containsKey(msgId)) +
+        //     ", msgContent=" + msgContent);
         
         // 【AI缓存优化】如果启用AI且缓存中有选项，直接使用缓存数据
         if (ConfigManager.isAiEnabled() && msgId != null && optionsCache.containsKey(msgId)) {
-            // XposedBridge.log(TAG + ": ✓ Using cached AI options for msgId=" + msgId);
+            // XposedBridge.log(TAG + ": Using cached AI options for msgId=" + msgId);
             List<String> cachedOptions = optionsCache.get(msgId);
             populateBarAndShow(context, bar, cachedOptions, msgRecord);
             return;
         }
         
         // 否则重新获取选项（AI或本地词库）
-        setupOptionBarContent(context, bar, msgContent, msgRecord, msgId);
+        // XposedBridge.log(TAG + ": Setting up option bar content for msgContent=" + msgContent);
+        setupOptionBarContent(context, bar, msgContent, msgRecord, msgId, conversationId);
     }
     
     private static void useDictionaryNT(Context context, LinearLayout bar, Object msgRecord) {
@@ -720,5 +1227,15 @@ public class MessageInterceptor {
         drawable.setColor(color);
         drawable.setCornerRadius(radiusPx);
         return drawable;
+    }
+
+    // 辅助方法：判断类是否是 RecyclerView 或其子类
+    private static boolean isRecyclerView(Class<?> clazz) {
+        if (clazz == null) return false;
+        if ("androidx.recyclerview.widget.RecyclerView".equals(clazz.getName()) || 
+            "android.support.v7.widget.RecyclerView".equals(clazz.getName())) {
+            return true;
+        }
+        return isRecyclerView(clazz.getSuperclass());
     }
 }

@@ -39,11 +39,23 @@ public class MessageInterceptor {
             }
         };
 
+    // 记录已请求显示选项的消息ID，防止View复用时重置回按钮状态
+    private static final java.util.Set<String> requestedOptionsMsgIds = java.util.Collections.synchronizedSet(new java.util.HashSet<>());
+
     public static void init(ClassLoader classLoader) {
         // Detect QQ architecture and use appropriate hook strategy
         if (top.galqq.utils.QQNTUtils.isQQNT(classLoader)) {
             XposedBridge.log(TAG + ": Detected QQNT, using QQNT hook strategy");
             hookAIOBubbleMsgItemVB(classLoader);  // QQNT architecture
+            
+            XposedBridge.log(TAG + ": Detected QQNT, using QQNT hook strategy");
+            hookAIOBubbleMsgItemVB(classLoader);  // QQNT architecture
+            
+            XposedBridge.log(TAG + ": Detected QQNT, using QQNT hook strategy");
+            hookAIOBubbleMsgItemVB(classLoader);  // QQNT architecture
+            
+            // 【DEBUG】Hook AIOSendMsgVMDelegate to analyze message structure
+            hookDebugAIOSendMsgVMDelegate(classLoader);
         } else {
             XposedBridge.log(TAG + ": Detected legacy QQ, using TextItemBuilder hook strategy");
             hookTextItemBuilder(classLoader);      // Legacy QQ architecture
@@ -344,11 +356,15 @@ public class MessageInterceptor {
     private static void populateBarAndShow(Context context, LinearLayout bar, List<String> options, Object chatMessage) {
         bar.removeAllViews();
         
+        XposedBridge.log(TAG + ": populateBarAndShow - options count=" + (options != null ? options.size() : "null"));
+        
         if (options == null || options.isEmpty()) {
+            XposedBridge.log(TAG + ": No options available, hiding bar");
             bar.setVisibility(View.GONE); // 没有选项时隐藏
             return;
         }
         
+        XposedBridge.log(TAG + ": Adding " + options.size() + " options to bar");
         for (String option : options) {
             TextView tv = new TextView(context);
             tv.setText(option);
@@ -376,6 +392,7 @@ public class MessageInterceptor {
         }
         
         bar.setVisibility(View.VISIBLE); // 有选项时显示
+        XposedBridge.log(TAG + ": Option bar populated and made visible");
     }
 
 
@@ -608,25 +625,22 @@ public class MessageInterceptor {
             // Filter out unwanted message types
             int msgType = XposedHelpers.getIntField(msgRecord, "msgType");
             
-            // 【调试日志】打印消息类型相关字段，用于识别转发聊天记录
+            // 【过滤转发聊天记录容器】msgType=11且subMsgType=7是转发聊天记录的容器消息
             try {
                 int subMsgType = XposedHelpers.getIntField(msgRecord, "subMsgType");
                 
-                XposedBridge.log(TAG + ": ===== Message Type Analysis =====");
-                XposedBridge.log(TAG + ": msgType=" + msgType + ", subMsgType=" + subMsgType);
-                XposedBridge.log(TAG + ": sendType=" + sendType);
+                // XposedBridge.log(TAG + ": ===== Message Type Analysis =====");
+                // XposedBridge.log(TAG + ": msgType=" + msgType + ", subMsgType=" + subMsgType);
+                // XposedBridge.log(TAG + ": sendType=" + sendType);
                 
-                // 【过滤转发聊天记录容器】msgType=11且subMsgType=7是转发聊天记录的容器消息
-                // 不过滤容器内的具体Text消息（msgType=2），因为它们的字段与普通消息相同
                 if (msgType == 11 && subMsgType == 7) {
-                    XposedBridge.log(TAG + ": ⚠️ FORWARDED CHAT RECORD CONTAINER - SKIPPING!");
-                    XposedBridge.log(TAG + ": ================================");
+                    // XposedBridge.log(TAG + ": ⚠️ FORWARDED CHAT RECORD CONTAINER - SKIPPING!");
                     return; // 跳过转发聊天记录容器
                 }
                 
-                XposedBridge.log(TAG + ": ================================");
+                // XposedBridge.log(TAG + ": ================================");
             } catch (Throwable t) {
-                XposedBridge.log(TAG + ": Error detecting forwarded message: " + t.getMessage());
+                // XposedBridge.log(TAG + ": Error detecting forwarded message: " + t.getMessage());
             }
             
             // 5 = Gray Tips (Revoke), 3 = File, 7 = Video
@@ -641,9 +655,14 @@ public class MessageInterceptor {
             }
             
             // 【关键修复】无条件清理旧选项条（RecyclerView的ViewHolder会复用）
-            LinearLayout existingBar = rootView.findViewById(OPTION_BAR_ID);
-            if (existingBar != null) {
-                rootView.removeView(existingBar);
+            // 使用View接收，避免ClassCastException（因为可能是LinearLayout也可能是TextView）
+            View existingView = rootView.findViewById(OPTION_BAR_ID);
+            if (existingView != null) {
+                if (existingView.getParent() instanceof ViewGroup) {
+                    ((ViewGroup) existingView.getParent()).removeView(existingView);
+                } else {
+                    rootView.removeView(existingView);
+                }
             }
             
             // 黑白名单过滤
@@ -668,16 +687,16 @@ public class MessageInterceptor {
                 }
                 // XposedBridge.log(TAG + ": ✓ PASSED filter: " + senderUin);
                 
-                // 【详细调试日志】在提取到所有变量后输出
-                XposedBridge.log(TAG + ": isSelf=" + isSelf);
-                XposedBridge.log(TAG + ": senderUin=" + senderUin);
-                if (msgContent != null && !msgContent.isEmpty()) {
-                    String contentPreview = msgContent.length() > 50 ? msgContent.substring(0, 50) + "..." : msgContent;
-                    XposedBridge.log(TAG + ": msgContent=" + contentPreview);
-                }
+                // 【详细调试日志】已禁用
+                // XposedBridge.log(TAG + ": isSelf=" + isSelf);
+                // XposedBridge.log(TAG + ": senderUin=" + senderUin);
+                // if (msgContent != null && !msgContent.isEmpty()) {
+                //     String contentPreview = msgContent.length() > 50 ? msgContent.substring(0, 50) + "..." : msgContent;
+                //     XposedBridge.log(TAG + ": msgContent=" + contentPreview);
+                // }
             } catch (Throwable t) {
-                XposedBridge.log(TAG + ": Error filtering by list: " + t.getMessage());
-                XposedBridge.log(t);
+                // XposedBridge.log(TAG + ": Error filtering by list: " + t.getMessage());
+                // XposedBridge.log(t);
                 return; // 过滤失败时不添加选项条
             }
             
@@ -745,22 +764,22 @@ public class MessageInterceptor {
                     try {
                         List<?> elements = (List<?>) XposedHelpers.getObjectField(msgRecord, "elements");
                         if (elements != null && !elements.isEmpty()) {
-                            // 【调试】输出元素列表信息
-                            XposedBridge.log(TAG + ": Elements count: " + elements.size());
-                            for (int i = 0; i < elements.size(); i++) {
-                                Object element = elements.get(i);
-                                XposedBridge.log(TAG + ":   [" + i + "] " + element.getClass().getSimpleName());
-                                
-                                // 尝试所有可能的引用字段名
-                                for (String fieldName : new String[]{"replyElement", "g", "h"}) {
-                                    try {
-                                        Object field = XposedHelpers.getObjectField(element, fieldName);
-                                        if (field != null) {
-                                            XposedBridge.log(TAG + ":     ." + fieldName + " exists: " + field.getClass().getSimpleName());
-                                        }
-                                    } catch (Throwable ignored) {}
-                                }
-                            }
+                            // 【调试日志已禁用】
+                            // XposedBridge.log(TAG + ": Elements count: " + elements.size());
+                            // for (int i = 0; i < elements.size(); i++) {
+                            //     Object element = elements.get(i);
+                            //     XposedBridge.log(TAG + ":   [" + i + "] " + element.getClass().getSimpleName());
+                            //     
+                            //     // 尝试所有可能的引用字段名
+                            //     for (String fieldName : new String[]{"replyElement", "g", "h"}) {
+                            //         try {
+                            //             Object field = XposedHelpers.getObjectField(element, fieldName);
+                            //             if (field != null) {
+                            //                 XposedBridge.log(TAG + ":     ." + fieldName + " exists: " + field.getClass().getSimpleName());
+                            //             }
+                            //         } catch (Throwable ignored) {}
+                            //     }
+                            // }
                             
                             for (Object element : elements) {
                                 try {
@@ -873,33 +892,64 @@ public class MessageInterceptor {
                     return; 
                 }
 
-                // 创建新选项条（每次都重新创建，不复用View）
-                LinearLayout optionBar = createEmptyOptionBarNT(context);
-                optionBar.setId(OPTION_BAR_ID);
-                
-                // 先添加选项条到布局（空的，稍后异步填充内容）
-                // XposedBridge.log(TAG + ": RootView class: " + rootView.getClass().getName());
-                Class<?> constraintLayoutClass = null;
-                try {
-                    constraintLayoutClass = XposedHelpers.findClass("androidx.constraintlayout.widget.ConstraintLayout", context.getClassLoader());
-                } catch (Throwable t) {
-                    // Ignore if class not found
-                }
 
-                if (constraintLayoutClass != null && constraintLayoutClass.isAssignableFrom(rootView.getClass())) {
-                    // XposedBridge.log(TAG + ": RootView is a ConstraintLayout (or subclass)");
-                    handleConstraintLayout(context, rootView, optionBar, msgRecord);
-                } else if (rootView.getClass().getName().contains("ConstraintLayout")) {
-                    // XposedBridge.log(TAG + ": RootView name contains ConstraintLayout");
-                    handleConstraintLayout(context, rootView, optionBar, msgRecord);
-                } else {
-                    // XposedBridge.log(TAG + ": RootView is NOT identified as ConstraintLayout, using legacy handler");
-                    handleLegacyLayout(context, rootView, optionBar);
-                }
-                
-                // 填充选项条内容（本地词库或AI，传递peerUin作为conversationId，确保群聊上下文正确）
+                // 检查是否自动显示选项
+                // 检查是否自动显示选项
+                boolean autoShow = ConfigManager.isAutoShowOptionsEnabled();
+                // 确保 conversationId 在作用域内
                 String conversationId = (peerUin != null && !peerUin.isEmpty()) ? peerUin : senderUin;
-                fillOptionBarContent(context, optionBar, msgRecord, msgId, conversationId);
+
+                // 检查是否用户手动点击过显示
+                boolean hasRequested = (msgId != null && requestedOptionsMsgIds.contains(msgId));
+                // 检查是否有缓存结果（有结果也应该直接显示）
+                boolean hasCache = (msgId != null && optionsCache.containsKey(msgId));
+                
+                if (autoShow || hasRequested || hasCache) {
+                    // 自动显示模式：创建选项条并立即填充
+                    // XposedBridge.log(TAG + ": AutoShow mode - creating option bar");
+                    LinearLayout optionBar = createEmptyOptionBarNT(context);
+                    optionBar.setId(OPTION_BAR_ID);
+                    
+                    Class<?> constraintLayoutClass = null;
+                    try {
+                        constraintLayoutClass = XposedHelpers.findClass("androidx.constraintlayout.widget.ConstraintLayout", context.getClassLoader());
+                    } catch (Throwable t) {
+                        // Ignore if class not found
+                    }
+
+                    if (constraintLayoutClass != null && constraintLayoutClass.isAssignableFrom(rootView.getClass())) {
+                        // XposedBridge.log(TAG + ": Using ConstraintLayout handler");
+                        handleConstraintLayout(context, rootView, optionBar, msgRecord);
+                    } else if (rootView.getClass().getName().contains("ConstraintLayout")) {
+                        // XposedBridge.log(TAG + ": Using ConstraintLayout handler (fallback)");
+                        handleConstraintLayout(context, rootView, optionBar, msgRecord);
+                    } else {
+                        // XposedBridge.log(TAG + ": Using LegacyLayout handler");
+                        handleLegacyLayout(context, rootView, optionBar);
+                    }
+                    
+                    // XposedBridge.log(TAG + ": Filling option bar content");
+                    fillOptionBarContent(context, optionBar, msgRecord, msgId, conversationId);
+                    // XposedBridge.log(TAG + ": AutoShow option bar created and filled successfully");
+                } else {
+                    // 按需显示模式：仅显示按钮
+                    View button = createShowOptionsButton(context, msgRecord, msgId, conversationId, rootView);
+                    
+                    Class<?> constraintLayoutClass = null;
+                    try {
+                        constraintLayoutClass = XposedHelpers.findClass("androidx.constraintlayout.widget.ConstraintLayout", context.getClassLoader());
+                    } catch (Throwable t) {
+                        // Ignore if class not found
+                    }
+
+                    if (constraintLayoutClass != null && constraintLayoutClass.isAssignableFrom(rootView.getClass())) {
+                        handleConstraintLayout(context, rootView, button, msgRecord);
+                    } else if (rootView.getClass().getName().contains("ConstraintLayout")) {
+                        handleConstraintLayout(context, rootView, button, msgRecord);
+                    } else {
+                        handleLegacyLayout(context, rootView, button);
+                    }
+                }
             }
             
             // XposedBridge.log(TAG + ": Successfully added option bar to QQNT message");
@@ -945,13 +995,14 @@ public class MessageInterceptor {
     private static void handleConstraintLayout(Context context, ViewGroup rootView, View optionBar, Object msgRecord) {
         try {
             // 1. Add view to ConstraintLayout first (needed for ConstraintSet to work)
-            // 使用MATCH_CONSTRAINT(0)让宽度由约束决定
-            // XposedBridge.log(TAG + ": Creating LayoutParams with MATCH_CONSTRAINT");
-            
+            // 判断是否是按钮（TextView），如果是则用WRAP_CONTENT，否则用MATCH_CONSTRAINT(0)
+            boolean isButton = (optionBar instanceof TextView);
+            int widthParam = isButton ? ViewGroup.LayoutParams.WRAP_CONTENT : 0; // 0 = MATCH_CONSTRAINT
+
             // Use ConstraintLayout.LayoutParams if possible
             Class<?> constraintLayoutParamsClass = XposedHelpers.findClass("androidx.constraintlayout.widget.ConstraintLayout$LayoutParams", context.getClassLoader());
             ViewGroup.LayoutParams clp = (ViewGroup.LayoutParams) constraintLayoutParamsClass.getConstructor(int.class, int.class)
-                .newInstance(0, ViewGroup.LayoutParams.WRAP_CONTENT); // 宽度0 = MATCH_CONSTRAINT
+                .newInstance(widthParam, ViewGroup.LayoutParams.WRAP_CONTENT);
             
             rootView.addView(optionBar, clp);
             
@@ -1024,9 +1075,12 @@ public class MessageInterceptor {
                 XposedHelpers.callMethod(constraintSet, "connect", 
                     OPTION_BAR_ID, START, msgBubbleId, START, dp2px(context, 8)); // 8dp左边距
                 
-                // 限制右边界到parent的END，留16dp margin
-                XposedHelpers.callMethod(constraintSet, "connect",
-                    OPTION_BAR_ID, END, 0 /* PARENT_ID */, END, dp2px(context, 16)); // 16dp右边距
+                // 仅对非按钮（即选项条）添加右侧约束，避免按钮被拉伸
+                if (!isButton) {
+                    // 限制右边界到parent的END，留16dp margin
+                    XposedHelpers.callMethod(constraintSet, "connect",
+                        OPTION_BAR_ID, END, 0 /* PARENT_ID */, END, dp2px(context, 16)); // 16dp右边距
+                }
                 
                 // Apply constraints
                 XposedHelpers.callMethod(constraintSet, "applyTo", rootView);
@@ -1073,20 +1127,89 @@ public class MessageInterceptor {
         return bar;
     }
     
+    // 创建"显示选项"按钮
+    private static View createShowOptionsButton(
+        Context context, 
+        Object msgRecord, 
+        String msgId, 
+        String conversationId,
+        ViewGroup rootView
+    ) {
+        TextView button = new TextView(context);
+        button.setText("显示选项");
+        button.setTextSize(12);
+        // 减小Padding，使其更紧凑
+        button.setPadding(dp2px(context, 8), dp2px(context, 4), dp2px(context, 8), dp2px(context, 4));
+        
+        // 样式优化：模仿加载中，使用极淡背景或无背景
+        // 这里使用一个非常淡的灰色背景，带圆角，类似Tag
+        button.setBackground(getRoundedBackground(Color.parseColor("#F5F5F5"), dp2px(context, 10)));
+        button.setTextColor(Color.parseColor("#333333")); // 深灰色，比黑色淡一点
+        button.setGravity(Gravity.CENTER);
+        
+        button.setOnClickListener(v -> {
+            // 记录该消息已请求显示选项
+            if (msgId != null) {
+                requestedOptionsMsgIds.add(msgId);
+            }
+
+            // 1. 移除按钮本身
+            if (button.getParent() instanceof ViewGroup) {
+                ((ViewGroup)button.getParent()).removeView(button);
+            }
+            
+            // 创建选项条并填充
+            LinearLayout optionBar = createEmptyOptionBarNT(context);
+            optionBar.setId(OPTION_BAR_ID);
+            
+            // 添加到相同位置
+            Class<?> constraintLayoutClass = null;
+            try {
+                constraintLayoutClass = XposedHelpers.findClass(
+                    "androidx.constraintlayout.widget.ConstraintLayout", 
+                    context.getClassLoader()
+                );
+            } catch (Throwable t) {
+                // Ignore
+            }
+            
+            if (constraintLayoutClass != null && constraintLayoutClass.isAssignableFrom(rootView.getClass())) {
+                handleConstraintLayout(context, rootView, optionBar, msgRecord);
+            } else if (rootView.getClass().getName().contains("ConstraintLayout")) {
+                handleConstraintLayout(context, rootView, optionBar, msgRecord);
+            } else {
+                handleLegacyLayout(context, rootView, optionBar);
+            }
+            
+            // 填充选项
+            fillOptionBarContent(context, optionBar, msgRecord, msgId, conversationId);
+        });
+        
+        button.setId(OPTION_BAR_ID); // 使用相同ID避免冲突
+        return button;
+    }
+    
     // 填充选项条内容（AI或本地词库）
     private static void fillOptionBarContent(Context context, LinearLayout bar, Object msgRecord, 
                                              String msgId, String conversationId) {
         String msgContent = getMessageContentNT(msgRecord);
         
+        // XposedBridge.log(TAG + ": fillOptionBarContent - msgId=" + msgId + 
+        //     ", aiEnabled=" + ConfigManager.isAiEnabled() + 
+        //     ", hasCache=" + (msgId != null && optionsCache.containsKey(msgId)) +
+        //     ", msgContent=" + msgContent);
+        
+        // 【AI缓存优化】如果启用AI且缓存中有选项，直接使用缓存数据
         // 【AI缓存优化】如果启用AI且缓存中有选项，直接使用缓存数据
         if (ConfigManager.isAiEnabled() && msgId != null && optionsCache.containsKey(msgId)) {
-            // XposedBridge.log(TAG + ": ✓ Using cached AI options for msgId=" + msgId);
+            // XposedBridge.log(TAG + ": Using cached AI options for msgId=" + msgId);
             List<String> cachedOptions = optionsCache.get(msgId);
             populateBarAndShow(context, bar, cachedOptions, msgRecord);
             return;
         }
         
         // 否则重新获取选项（AI或本地词库）
+        // XposedBridge.log(TAG + ": Setting up option bar content for msgContent=" + msgContent);
         setupOptionBarContent(context, bar, msgContent, msgRecord, msgId, conversationId);
     }
     
@@ -1144,5 +1267,105 @@ public class MessageInterceptor {
             return true;
         }
         return isRecyclerView(clazz.getSuperclass());
+    }
+
+    // 【DEBUG】Hook AIO消息发送相关类的所有方法以分析调用流程
+    private static void hookDebugAIOSendMsgVMDelegate(ClassLoader classLoader) {
+        String[] targetClasses = {
+            // 尝试两个可能的包路径
+            "com.tencent.mobileqq.aio.input.sendmsg.AIOSendMsgVMDelegate",
+            "com.tencent.mobileqq.aio.msg.AIOSendMsgVMDelegate",
+            "com.tencent.mobileqq.aio.msg.AIOSendMsgViewModel",
+            "com.tencent.mobileqq.aio.input.sendmsg.AIOSendMsgViewModel"
+        };
+
+        for (String className : targetClasses) {
+            try {
+                Class<?> clazz = XposedHelpers.findClass(className, classLoader);
+                
+                int hookedCount = 0;
+                // 遍历所有方法并 Hook
+                for (Method method : clazz.getDeclaredMethods()) {
+                    // 过滤掉常见的基础方法以减少日志噪音
+                    String methodName = method.getName();
+                    if (methodName.equals("toString") || methodName.equals("hashCode") || 
+                        methodName.equals("equals") || methodName.equals("getClass")) {
+                        continue;
+                    }
+                    
+                    try {
+                        XposedBridge.hookMethod(method, new XC_MethodHook() {
+                            @Override
+                            protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                                logMethodCall(param);
+                            }
+                        });
+                        hookedCount++;
+                    } catch (Throwable hookError) {
+                        // 单个方法 Hook 失败不影响整体
+                    }
+                }
+                
+                // XposedBridge.log(TAG + ": [DEBUG] Hooked " + hookedCount + " methods in " + className);
+            } catch (Throwable t) {
+                // 类不存在或其他错误，跳过
+                // String msg = t.getMessage();
+                // if (msg != null && msg.contains("ClassNotFound")) {
+                //     XposedBridge.log(TAG + ": [DEBUG] Class not found (skip): " + className);
+                // } else {
+                //     XposedBridge.log(TAG + ": [DEBUG] Failed to hook " + className + ": " + msg);
+                // }
+            }
+        }
+    }
+
+
+
+
+    private static void logMethodCall(XC_MethodHook.MethodHookParam param) {
+        // DEBUG 日志已禁用
+        /*
+        try {
+            String methodName = param.method.getName();
+            String className = param.thisObject != null ? param.thisObject.getClass().getSimpleName() : "static";
+            
+            XposedBridge.log(TAG + ": [DEBUG] " + className + "." + methodName + " called");
+            XposedBridge.log(TAG + ":   Args count: " + param.args.length);
+            
+            for (int i = 0; i < param.args.length; i++) {
+                Object arg = param.args[i];
+                String type = arg != null ? arg.getClass().getName() : "null";
+                XposedBridge.log(TAG + ":   arg[" + i + "] (" + type + "): " + arg);
+                
+                // 如果参数是 List，尝试打印第一个元素的详细信息
+                if (arg instanceof List) {
+                    List<?> list = (List<?>) arg;
+                    if (!list.isEmpty()) {
+                        Object firstItem = list.get(0);
+                        if (firstItem != null) {
+                            XposedBridge.log(TAG + ":     List[0] class: " + firstItem.getClass().getName());
+                            // 反射打印字段
+                            try {
+                                for (Field f : firstItem.getClass().getDeclaredFields()) {
+                                    f.setAccessible(true);
+                                    Object val = f.get(firstItem);
+                                    String fieldType = f.getType().getName();
+                                    XposedBridge.log(TAG + ":       Field '" + f.getName() + "' (" + fieldType + "): " + val);
+                                    
+                                    if (val != null && val.getClass().getName().contains("AIOElementType")) {
+                                         XposedBridge.log(TAG + ":         -> Found potential element wrapper: " + val.getClass().getName());
+                                    }
+                                }
+                            } catch (Exception e) {
+                                XposedBridge.log(TAG + ":       Error inspecting list item: " + e.getMessage());
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            XposedBridge.log(TAG + ": [DEBUG] Error logging method call: " + t.getMessage());
+        }
+        */
     }
 }

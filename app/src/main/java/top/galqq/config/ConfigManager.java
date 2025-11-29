@@ -31,6 +31,7 @@ public class ConfigManager {
     public static final String KEY_CONTEXT_ENABLED = "gal_context_enabled";
     public static final String KEY_CONTEXT_MESSAGE_COUNT = "gal_context_message_count";
     public static final String KEY_HISTORY_THRESHOLD = "gal_history_threshold";
+    public static final String KEY_AUTO_SHOW_OPTIONS = "gal_auto_show_options";
 
     // AI Providers
     public static final String PROVIDER_OPENAI = "openai";
@@ -52,6 +53,7 @@ public class ConfigManager {
     public static final boolean DEFAULT_CONTEXT_ENABLED = true;
     public static final int DEFAULT_CONTEXT_MESSAGE_COUNT = 15; // 从10改为15
     public static final int DEFAULT_HISTORY_THRESHOLD = 600; // 历史消息阈值（秒），默认10分钟
+    public static final boolean DEFAULT_AUTO_SHOW_OPTIONS = false;
     
     // QPS Default Value
     public static final float DEFAULT_AI_QPS = 3.0f;
@@ -300,6 +302,14 @@ public class ConfigManager {
     
     public static void setHistoryThreshold(int seconds) {
         getMmkv().encode(KEY_HISTORY_THRESHOLD, seconds);
+    }
+    
+    public static boolean isAutoShowOptionsEnabled() {
+        return getMmkv().decodeBool(KEY_AUTO_SHOW_OPTIONS, DEFAULT_AUTO_SHOW_OPTIONS);
+    }
+    
+    public static void setAutoShowOptionsEnabled(boolean enabled) {
+        getMmkv().encode(KEY_AUTO_SHOW_OPTIONS, enabled);
     }
 
     // ========== Generic Methods ==========

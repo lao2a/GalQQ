@@ -136,6 +136,14 @@
             android:defaultValue="" />
     </PreferenceCategory>
 
+    <PreferenceCategory android:title="@string/gal_display_cat_title">
+        <SwitchPreference
+            android:key="gal_auto_show_options"
+            android:title="@string/gal_auto_show_title"
+            android:summary="@string/gal_auto_show_summary"
+            android:defaultValue="false" />
+    </PreferenceCategory>
+
     <PreferenceCategory android:title="@string/gal_dict_cat_title">
         <EditTextPreference
             android:key="gal_dict_path"
