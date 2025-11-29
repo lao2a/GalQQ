@@ -13,3 +13,13 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Log files
+*.log
+build_log.txt
+galqq_ai_logs_*.txt
+verbose_*.log
+
+# Backup files
+备份/
+build_error.txt
