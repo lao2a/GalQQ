@@ -55,6 +55,44 @@
     <string name="gal_auto_show_title">自动显示选项</string>
     <string name="gal_auto_show_summary">开启后每条消息自动显示选项条；关闭后需点击按钮才生成选项</string>
     
+    <!-- 图片识别设置 -->
+    <string name="gal_image_recognition_cat_title">图片识别</string>
+    <string name="gal_image_recognition_enabled_title">启用图片识别</string>
+    <string name="gal_image_recognition_enabled_summary">识别消息中的图片内容</string>
+    <string name="gal_emoji_recognition_enabled_title">启用表情包识别</string>
+    <string name="gal_emoji_recognition_enabled_summary">识别消息中的表情包</string>
+    
+    <!-- 外挂AI设置 -->
+    <string name="gal_vision_ai_cat_title">外挂AI (图片识别)</string>
+    <string name="gal_vision_ai_enabled_title">启用外挂AI</string>
+    <string name="gal_vision_ai_enabled_summary">使用外部AI服务识别图片内容</string>
+    <string name="gal_vision_ai_provider_title">外挂AI服务商</string>
+    <string name="gal_vision_ai_provider_summary">选择图片识别AI服务商</string>
+    <string name="gal_vision_api_url_title">外挂AI API URL</string>
+    <string name="gal_vision_api_url_summary">图片识别API地址</string>
+    <string name="gal_vision_api_key_title">外挂AI API Key</string>
+    <string name="gal_vision_api_key_summary">图片识别API密钥</string>
+    <string name="gal_vision_ai_model_title">外挂AI模型</string>
+    <string name="gal_vision_ai_model_summary">图片识别使用的模型</string>
+    <string name="gal_vision_use_proxy_title">外挂AI使用代理</string>
+    <string name="gal_vision_use_proxy_summary">图片识别请求是否使用主代理配置</string>
+    <string name="gal_test_vision_ai_title">测试外挂AI</string>
+    <string name="gal_test_vision_ai_summary">使用测试图片验证外挂AI配置</string>
+    <string name="gal_image_max_size_title">图片大小限制</string>
+    <string name="gal_image_max_size_summary">最大处理图片大小（KB）</string>
+    <string name="gal_image_description_max_length_title">描述长度限制</string>
+    <string name="gal_image_description_max_length_summary">图片描述最大字符数</string>
+    <string name="gal_vision_timeout_title">识别超时时间</string>
+    <string name="gal_vision_timeout_summary">图片识别请求超时时间（秒）</string>
+    
+    <!-- 图片识别提示 -->
+    <string name="vision_ai_test_success">外挂AI测试成功</string>
+    <string name="vision_ai_test_failed">外挂AI测试失败</string>
+    <string name="vision_ai_not_enabled">请先启用外挂AI</string>
+    <string name="vision_api_url_empty">请填写外挂AI API URL</string>
+    <string name="vision_api_key_empty">请填写外挂AI API Key</string>
+    <string name="vision_ai_testing">正在测试外挂AI连接...</string>
+    
     <!-- 关于 -->
     <string name="gal_about_cat_title">关于</string>
     <string name="gal_contact_title">联系作者</string>

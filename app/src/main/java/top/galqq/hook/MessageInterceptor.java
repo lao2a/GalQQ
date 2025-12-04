@@ -434,10 +434,24 @@ public class MessageInterceptor {
             String customPrompt = selectedPrompt.content;
             debugLog(TAG + ": Using prompt: " + selectedPrompt.name + " for sender: " + senderQQ);
             
-            // 提交到限流队列（带优先级、上下文、发送者QQ和自定义提示词）
+            // 【图片识别】提取消息中的图片元素
+            java.util.List<top.galqq.utils.ImageExtractor.ImageElement> imageElements = null;
+            if (ConfigManager.isImageRecognitionEnabled() && msgObj != null) {
+                try {
+                    imageElements = top.galqq.utils.ImageExtractor.extractImages(msgObj);
+                    if (imageElements != null && !imageElements.isEmpty()) {
+                        debugLog(TAG + ": 检测到 " + imageElements.size() + " 张图片");
+                    }
+                } catch (Throwable t) {
+                    debugLog(TAG + ": 图片提取失败: " + t.getMessage());
+                }
+            }
+            
+            // 提交到限流队列（带优先级、上下文、发送者QQ、自定义提示词、图片元素和会话ID）
             // 使用支持重试的回调接口
             final String finalSenderQQ = senderQQ;
             final String finalCustomPrompt = customPrompt;
+            final java.util.List<top.galqq.utils.ImageExtractor.ImageElement> finalImageElements = imageElements;
             AiRateLimitedQueue.getInstance(context).submitRequest(
                 context, 
                 msgContent, 
@@ -448,6 +462,8 @@ public class MessageInterceptor {
                 currentTimestamp, // 当前消息时间戳
                 finalSenderQQ, // 发送者QQ号
                 finalCustomPrompt, // 自定义提示词
+                finalImageElements, // 图片元素列表
+                conversationId, // 会话ID（用于图片描述缓存）
                 new HttpAiClient.AiCallbackWithRetry() {
                     @Override
                     public void onSuccess(List<String> options) {
@@ -1058,10 +1074,150 @@ public class MessageInterceptor {
         }
     }
 
+    /**
+     * 调试消息结构 - 分析msgRecord中的图片和表情包元素
+     * 受 gal_debug_hook_log 配置开关控制
+     */
+    private static void debugMessageStructure(Object msgRecord) {
+        if (!ConfigManager.isDebugHookLogEnabled()) {
+            return; // 调试日志未启用，直接返回
+        }
+        
+        try {
+            debugLog(TAG + ": ========== 开始分析消息结构 ==========");
+            
+            // 1. 分析msgRecord的基本信息
+            debugLog(TAG + ": msgRecord类型: " + msgRecord.getClass().getName());
+            
+            // 2. 获取elements列表
+            List<?> elements = null;
+            try {
+                elements = (List<?>) XposedHelpers.getObjectField(msgRecord, "elements");
+                if (elements == null || elements.isEmpty()) {
+                    debugLog(TAG + ": ⚠️ elements为空或不存在");
+                    return;
+                }
+                debugLog(TAG + ": ✓ elements数量: " + elements.size());
+            } catch (Throwable t) {
+                debugLog(TAG + ": ✗ 获取elements失败: " + t.getMessage());
+                return;
+            }
+            
+            // 3. 遍历每个element
+            for (int i = 0; i < elements.size(); i++) {
+                Object element = elements.get(i);
+                debugLog(TAG + ": --- Element[" + i + "] ---");
+                debugLog(TAG + ":   类型: " + element.getClass().getName());
+                
+                // 4. 分析element的所有字段
+                try {
+                    Field[] fields = element.getClass().getDeclaredFields();
+                    for (Field field : fields) {
+                        field.setAccessible(true);
+                        try {
+                            Object value = field.get(element);
+                            String valueStr = (value != null) ? value.toString() : "null";
+                            // 限制输出长度
+                            if (valueStr.length() > 200) {
+                                valueStr = valueStr.substring(0, 200) + "...";
+                            }
+                            debugLog(TAG + ":   ." + field.getName() + " = " + valueStr);
+                            
+                            // 如果字段值是对象,尝试分析其类型
+                            if (value != null && !field.getType().isPrimitive() && !field.getType().equals(String.class)) {
+                                debugLog(TAG + ":     └─ 类型: " + value.getClass().getName());
+                                
+                                // 特别关注可能是图片或表情包的字段
+                                String fieldName = field.getName().toLowerCase();
+                                if (fieldName.contains("pic") || fieldName.contains("image") || 
+                                    fieldName.contains("face") || fieldName.contains("emoji")) {
+                                    debugLog(TAG + ":     ⭐ 可能包含图片/表情包数据!");
+                                    // 递归分析这个对象的字段
+                                    analyzeObjectFields(value, "       ");
+                                }
+                            }
+                        } catch (Throwable t) {
+                            debugLog(TAG + ":   ." + field.getName() + " - 访问失败: " + t.getMessage());
+                        }
+                    }
+                } catch (Throwable t) {
+                    debugLog(TAG + ":   分析字段失败: " + t.getMessage());
+                }
+            }
+            
+            debugLog(TAG + ": ========== 消息结构分析完成 ==========");
+            
+        } catch (Throwable t) {
+            debugLog(TAG + ": debugMessageStructure失败: " + t.getMessage());
+            debugLog(t);
+        }
+    }
+    
+    /**
+     * 递归分析对象的字段（用于深入分析图片/表情包元素）
+     */
+    private static void analyzeObjectFields(Object obj, String indent) {
+        if (obj == null) return;
+        
+        try {
+            Field[] fields = obj.getClass().getDeclaredFields();
+            int maxFields = Math.min(fields.length, 20); // 限制最多分析20个字段
+            
+            for (int i = 0; i < maxFields; i++) {
+                Field field = fields[i];
+                field.setAccessible(true);
+                try {
+                    Object value = field.get(obj);
+                    String valueStr = (value != null) ? value.toString() : "null";
+                    if (valueStr.length() > 100) {
+                        valueStr = valueStr.substring(0, 100) + "...";
+                    }
+                    debugLog(TAG + ": " + indent + "." + field.getName() + " = " + valueStr);
+                    
+                    if (value != null && !field.getType().isPrimitive() && !field.getType().equals(String.class)) {
+                        debugLog(TAG + ": " + indent + "  └─ 类型: " + value.getClass().getName());
+                    }
+                } catch (Throwable t) {
+                    // 忽略访问失败的字段
+                }
+            }
+            
+            if (fields.length > maxFields) {
+                debugLog(TAG + ": " + indent + "... (还有 " + (fields.length - maxFields) + " 个字段未显示)");
+            }
+        } catch (Throwable t) {
+            debugLog(TAG + ": " + indent + "分析对象字段失败: " + t.getMessage());
+        }
+    }
+
     private static void processQQNTMessage(Object aioBubbleMsgItemVB, Object msgItem, Method getMsgRecord) {
         try {
             // Get MsgRecord
             Object msgRecord = getMsgRecord.invoke(msgItem);
+            
+            // 【调试】分析消息结构（仅当包含图片或表情包时）
+            try {
+                List<?> elements = (List<?>) XposedHelpers.getObjectField(msgRecord, "elements");
+                if (elements != null && !elements.isEmpty()) {
+                    // 检查是否包含图片或表情包
+                    boolean hasImageOrEmoji = false;
+                    for (Object element : elements) {
+                        String className = element.getClass().getName().toLowerCase();
+                        if (className.contains("pic") || className.contains("image") || 
+                            className.contains("face") || className.contains("emoji")) {
+                            hasImageOrEmoji = true;
+                            break;
+                        }
+                    }
+                    
+                    // 如果包含图片或表情包，执行调试分析
+                    if (hasImageOrEmoji) {
+                        debugMessageStructure(msgRecord);
+                    }
+                }
+            } catch (Throwable t) {
+                // 忽略调试失败
+            }
             
             // Get root ViewGroup via getHostView
             Method getHostView = aioBubbleMsgItemVB.getClass().getMethod("getHostView");
@@ -1193,10 +1349,81 @@ public class MessageInterceptor {
                 return;
             }
 
-            // Filter out messages with no text content (e.g. pure images, stickers)
+            // 获取文字内容
             String msgContent = getMessageContentNT(msgRecord);
-            if (msgContent.isEmpty()) {
+            
+            // 【图片识别】提取图片和表情包元素
+            java.util.List<top.galqq.utils.ImageExtractor.ImageElement> imageElements = null;
+            java.util.List<top.galqq.utils.ImageExtractor.EmojiElement> emojiElements = null;
+            boolean hasImages = false;
+            boolean hasEmojis = false;
+            
+            if (ConfigManager.isImageRecognitionEnabled() || ConfigManager.isEmojiRecognitionEnabled()) {
+                try {
+                    if (ConfigManager.isImageRecognitionEnabled()) {
+                        imageElements = top.galqq.utils.ImageExtractor.extractImages(msgRecord);
+                        hasImages = imageElements != null && !imageElements.isEmpty();
+                        if (hasImages && ConfigManager.isDebugHookLogEnabled()) {
+                            debugLog(TAG + ": 提取到 " + imageElements.size() + " 张图片");
+                        }
+                    }
+                    
+                    if (ConfigManager.isEmojiRecognitionEnabled()) {
+                        emojiElements = top.galqq.utils.ImageExtractor.extractEmojis(msgRecord);
+                        hasEmojis = emojiElements != null && !emojiElements.isEmpty();
+                        if (hasEmojis && ConfigManager.isDebugHookLogEnabled()) {
+                            debugLog(TAG + ": 提取到 " + emojiElements.size() + " 个表情包");
+                        }
+                    }
+                } catch (Throwable t) {
+                    debugLog(TAG + ": 图片/表情包提取失败: " + t.getMessage());
+                }
+            }
+            
+            // 如果没有文字内容且没有图片/表情包,则跳过
+            if (msgContent.isEmpty() && !hasImages && !hasEmojis) {
                 return;
+            }
+            
+            // 【图片识别】合并图片描述到消息内容
+            if (hasImages || hasEmojis) {
+                java.util.List<String> imageDescriptions = null;
+                java.util.List<String> emojiDescriptions = null;
+                
+                if (hasEmojis) {
+                    // 表情包可以直接获取描述
+                    emojiDescriptions = top.galqq.utils.ImageContextManager.createEmojiDescriptions(emojiElements);
+                }
+                
+                if (hasImages) {
+                    // 根据是否启用外挂AI决定如何处理图片
+                    if (ConfigManager.isVisionAiEnabled()) {
+                        // 启用外挂AI时,使用占位符(后续异步识别)
+                        imageDescriptions = top.galqq.utils.ImageContextManager.createPlaceholderDescriptions(imageElements);
+                    } else {
+                        // 未启用外挂AI时,直接把图片信息发送给主AI
+                        imageDescriptions = new java.util.ArrayList<>();
+                        for (top.galqq.utils.ImageExtractor.ImageElement img : imageElements) {
+                            // 使用新的getDescriptionForAi方法获取完整描述
+                            String desc = img.getDescriptionForAi();
+                            imageDescriptions.add(desc);
+                            
+                            if (ConfigManager.isDebugHookLogEnabled()) {
+                                debugLog(TAG + ": 图片描述: " + desc);
+                                debugLog(TAG + ":   sourcePath=" + img.sourcePath);
+                                debugLog(TAG + ":   imageUrl=" + img.imageUrl);
+                            }
+                        }
+                    }
+                }
+                
+                // 合并内容
+                msgContent = top.galqq.utils.ImageContextManager.mergeImageContext(
+                    msgContent, imageDescriptions, emojiDescriptions);
+                
+                if (ConfigManager.isDebugHookLogEnabled()) {
+                    debugLog(TAG + ": 合并后消息内容: " + msgContent);
+                }
             }
             
             // 【关键修复】无条件清理旧选项条和好感度视图（RecyclerView的ViewHolder会复用）
@@ -1419,7 +1646,14 @@ public class MessageInterceptor {
                         senderName = senderName + "[我]";
                     }
                     
-                    MessageContextManager.addMessage(peerUin, senderName, msgContent, isSelf, msgId, msgTime);
+                    // 【上下文图片识别】传递图片数量，用于后续识别上下文中的图片
+                    int imageCount = (imageElements != null) ? imageElements.size() : 0;
+                    MessageContextManager.addMessage(peerUin, senderName, msgContent, isSelf, msgId, msgTime, imageCount);
+                    
+                    // 【上下文图片识别】缓存图片元素，以便后续识别
+                    if (imageElements != null && !imageElements.isEmpty() && peerUin != null && msgId != null) {
+                        top.galqq.utils.ImageDescriptionCache.putImageElements(peerUin, msgId, imageElements);
+                    }
                 }
             } catch (Throwable t) {
                 debugLog(TAG + ": Error saving message to context: " + t.getMessage());

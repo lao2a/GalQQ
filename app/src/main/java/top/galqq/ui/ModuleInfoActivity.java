@@ -33,13 +33,13 @@ public class ModuleInfoActivity extends AppCompatTransferActivity {
         
         // 设置版本信息（与配置界面保持一致）
         TextView tvVersion = findViewById(R.id.tvVersion);
-        tvVersion.setText("版本 1.0.4 Alpha");
+        tvVersion.setText("版本 1.0.5 Alpha");
         
         // 设置按钮点击事件
         MaterialButton btnJoinGroup = findViewById(R.id.btnJoinGroup);
         btnJoinGroup.setOnClickListener(v -> {
             try {
-                String url = "mqqapi://card/show_pslcard?src_type=internal&version=1&uin=1026163188&card_type=group&source=qrcode";
+                String url = "mqqapi://card/show_pslcard?src_type=internal&version=1&uin= 859142525&card_type=group&source=qrcode";
                 startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
             } catch (Exception e) {
                 // ignore

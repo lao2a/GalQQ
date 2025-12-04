@@ -75,4 +75,28 @@
         <item>HTTP</item>
         <item>SOCKS</item>
     </string-array>
+    
+    <!-- 外挂AI服务商选项 (图片识别) -->
+    <string-array name="vision_ai_provider_names">
+        <item>OpenAI (GPT-4 Vision)</item>
+        <item>Google (Gemini Vision)</item>
+        <item>Anthropic (Claude Vision)</item>
+        <item>月之暗面 (Kimi Vision)</item>
+        <item>智谱AI (GLM-4V)</item>
+        <item>阿里云DashScope (通义千问VL)</item>
+        <item>字节豆包 (Doubao Vision)</item>
+        <item>百度千帆 (文心视觉)</item>
+        <item>自定义</item>
+    </string-array>
+    <string-array name="vision_ai_provider_values">
+        <item>openai</item>
+        <item>google</item>
+        <item>anthropic</item>
+        <item>kimi</item>
+        <item>glm</item>
+        <item>dashscope</item>
+        <item>doubao</item>
+        <item>baidu</item>
+        <item>custom</item>
+    </string-array>
 </resources>

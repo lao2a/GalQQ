@@ -153,4 +153,71 @@ public class AiLogManager {
     public static String getLogFilePath(Context context) {
         return getLogFile(context).getAbsolutePath();
     }
+    
+    /**
+     * 添加图片识别日志
+     * @param context Android上下文
+     * @param imageCount 图片数量
+     * @param emojiCount 表情包数量
+     * @param descriptions 识别结果描述
+     * @param elapsedMs 耗时(毫秒)
+     */
+    public static void logImageRecognition(Context context, int imageCount, int emojiCount,
+                                           java.util.List<String> descriptions, long elapsedMs) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("图片识别\n");
+        sb.append("图片数: ").append(imageCount).append("\n");
+        sb.append("表情包数: ").append(emojiCount).append("\n");
+        sb.append("耗时: ").append(elapsedMs).append("ms\n");
+        
+        if (descriptions != null && !descriptions.isEmpty()) {
+            sb.append("识别结果:\n");
+            for (int i = 0; i < descriptions.size(); i++) {
+                String desc = descriptions.get(i);
+                if (desc != null && desc.length() > 100) {
+                    desc = desc.substring(0, 100) + "...";
+                }
+                sb.append("  [").append(i + 1).append("] ").append(desc).append("\n");
+            }
+        }
+        
+        addLog(context, sb.toString());
+    }
+    
+    /**
+     * 添加图片识别错误日志
+     * @param context Android上下文
+     * @param imageCount 图片数量
+     * @param error 错误信息
+     */
+    public static void logImageRecognitionError(Context context, int imageCount, String error) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("图片识别失败\n");
+        sb.append("图片数: ").append(imageCount).append("\n");
+        sb.append("错误: ").append(error);
+        
+        addLog(context, sb.toString());
+    }
+    
+    /**
+     * 添加Vision AI请求日志
+     * @param context Android上下文
+     * @param provider 服务商
+     * @param model 模型
+     * @param imageUrl 图片URL
+     * @param response 响应内容
+     * @param elapsedMs 耗时(毫秒)
+     */
+    public static void logVisionAiRequest(Context context, String provider, String model,
+                                          String imageUrl, String response, long elapsedMs) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Vision AI请求\n");
+        sb.append("Provider: ").append(provider).append("\n");
+        sb.append("Model: ").append(model).append("\n");
+        sb.append("图片URL: ").append(imageUrl != null ? imageUrl.substring(0, Math.min(50, imageUrl.length())) + "..." : "base64").append("\n");
+        sb.append("耗时: ").append(elapsedMs).append("ms\n");
+        sb.append("响应: ").append(response != null ? response.substring(0, Math.min(200, response.length())) : "null");
+        
+        addLog(context, sb.toString());
+    }
 }

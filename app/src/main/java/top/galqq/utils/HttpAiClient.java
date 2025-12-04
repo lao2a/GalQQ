@@ -347,7 +347,7 @@ public class HttpAiClient {
         // 【关键】所有重试过程中都抑制Toast，只有最终失败时才显示
         // 第一次请求也抑制Toast，因为可能会自动重试
         fetchOptionsInternal(context, userMessage, currentSenderName, currentTimestamp, 
-                            contextMessages, null, new AiCallback() {
+                            contextMessages, null, null, new AiCallback() {
             @Override
             public void onSuccess(List<String> options) {
                 callback.onSuccess(options);
@@ -405,7 +405,7 @@ public class HttpAiClient {
                                     List<top.galqq.utils.MessageContextManager.ChatMessage> contextMessages,
                                     AiCallback callback) {
         fetchOptionsInternal(context, userMessage, currentSenderName, currentTimestamp, 
-                            contextMessages, null, callback, false);
+                            contextMessages, null, null, callback, false);
     }
     
     /**
@@ -417,7 +417,7 @@ public class HttpAiClient {
                                     List<top.galqq.utils.MessageContextManager.ChatMessage> contextMessages,
                                     AiCallback callback) {
         fetchOptionsInternal(context, userMessage, currentSenderName, currentTimestamp, 
-                            contextMessages, null, callback, true);
+                            contextMessages, null, null, callback, true);
     }
     
     /**
@@ -437,7 +437,7 @@ public class HttpAiClient {
                                     String customPrompt,
                                     AiCallback callback) {
         fetchOptionsInternal(context, userMessage, currentSenderName, currentTimestamp, 
-                            contextMessages, customPrompt, callback, false);
+                            contextMessages, customPrompt, null, callback, false);
     }
     
     /**
@@ -450,7 +450,457 @@ public class HttpAiClient {
                                     String customPrompt,
                                     AiCallback callback) {
         fetchOptionsInternal(context, userMessage, currentSenderName, currentTimestamp, 
-                            contextMessages, customPrompt, callback, true);
+                            contextMessages, customPrompt, null, callback, true);
+    }
+    
+    /**
+     * 获取AI生成的回复选项（带图片信息）
+     * 当消息包含图片时，先通过外挂AI获取图片描述，再调用主AI
+     * 
+     * @param context Android上下文
+     * @param userMessage 当前用户消息内容
+     * @param currentSenderName 当前消息发送人昵称
+     * @param currentTimestamp 当前消息时间戳
+     * @param contextMessages 历史上下文消息（可为null）
+     * @param customPrompt 自定义提示词内容（如果为null则使用默认）
+     * @param imageElements 图片元素列表（可为null）
+     * @param callback 回调
+     */
+    public static void fetchOptionsWithImages(Context context, String userMessage,
+                                    String currentSenderName, long currentTimestamp,
+                                    List<top.galqq.utils.MessageContextManager.ChatMessage> contextMessages,
+                                    String customPrompt,
+                                    List<ImageExtractor.ImageElement> imageElements,
+                                    AiCallback callback) {
+        fetchOptionsWithImages(context, userMessage, currentSenderName, currentTimestamp,
+                              contextMessages, customPrompt, imageElements, null, null, callback);
+    }
+    
+    /**
+     * 获取AI生成的回复选项（带图片信息和缓存支持）
+     * 当消息包含图片时，先通过外挂AI获取图片描述，再调用主AI
+     * 
+     * @param context Android上下文
+     * @param userMessage 当前用户消息内容
+     * @param currentSenderName 当前消息发送人昵称
+     * @param currentTimestamp 当前消息时间戳
+     * @param contextMessages 历史上下文消息（可为null）
+     * @param customPrompt 自定义提示词内容（如果为null则使用默认）
+     * @param imageElements 图片元素列表（可为null）
+     * @param conversationId 会话ID（用于缓存）
+     * @param msgId 消息ID（用于缓存和标识）
+     * @param callback 回调
+     */
+    public static void fetchOptionsWithImages(Context context, String userMessage,
+                                    String currentSenderName, long currentTimestamp,
+                                    List<top.galqq.utils.MessageContextManager.ChatMessage> contextMessages,
+                                    String customPrompt,
+                                    List<ImageExtractor.ImageElement> imageElements,
+                                    String conversationId, String msgId,
+                                    AiCallback callback) {
+        // 如果没有图片或图片识别未启用
+        if (imageElements == null || imageElements.isEmpty() || !ConfigManager.isImageRecognitionEnabled()) {
+            // 检查是否需要处理上下文图片（不再要求必须启用外挂AI）
+            boolean needContextImageRecognition = ConfigManager.isContextImageRecognitionEnabled()
+                                                && ConfigManager.isImageRecognitionEnabled()
+                                                && conversationId != null
+                                                && contextMessages != null
+                                                && hasContextImages(contextMessages);
+            
+            if (needContextImageRecognition) {
+                // 有上下文图片需要处理，在后台线程处理
+                Log.d(TAG, "当前消息无图片，但有上下文图片需要处理");
+                new Thread(() -> {
+                    try {
+                        // 根据是否启用外挂AI选择处理方式
+                        if (ConfigManager.isVisionAiEnabled()) {
+                            recognizeContextImages(context, conversationId, contextMessages);
+                        } else {
+                            processContextImagesForMainAi(context, conversationId, contextMessages);
+                        }
+                        mainHandler.post(() -> {
+                            fetchOptionsInternal(context, userMessage, currentSenderName, currentTimestamp, 
+                                                contextMessages, customPrompt, null, conversationId, callback, false);
+                        });
+                    } catch (Exception e) {
+                        Log.e(TAG, "上下文图片识别失败: " + e.getMessage());
+                        mainHandler.post(() -> {
+                            fetchOptionsInternal(context, userMessage, currentSenderName, currentTimestamp, 
+                                                contextMessages, customPrompt, null, conversationId, callback, false);
+                        });
+                    }
+                }).start();
+            } else {
+                // 不需要处理上下文图片，直接调用
+                fetchOptionsInternal(context, userMessage, currentSenderName, currentTimestamp, 
+                                    contextMessages, customPrompt, null, callback, false);
+            }
+            return;
+        }
+        
+        // 检查是否启用外挂AI
+        Log.d(TAG, "fetchOptionsWithImages: 图片数量=" + imageElements.size() + ", VisionAI启用=" + ConfigManager.isVisionAiEnabled());
+        
+        if (ConfigManager.isVisionAiEnabled()) {
+            // 使用外挂AI获取图片描述
+            Log.d(TAG, "使用外挂AI处理图片");
+            processImagesWithVisionAi(context, userMessage, currentSenderName, currentTimestamp,
+                                      contextMessages, customPrompt, imageElements, 
+                                      conversationId, msgId, callback);
+        } else {
+            // 未启用外挂AI，将图片Base64直接发送给主AI（如果主AI支持Vision）
+            Log.d(TAG, "未启用外挂AI，尝试直接获取图片Base64");
+            
+            // 【上下文图片识别】如果启用了上下文图片识别，也需要处理上下文中的图片
+            final boolean contextImageEnabled = ConfigManager.isContextImageRecognitionEnabled() 
+                                              && conversationId != null 
+                                              && contextMessages != null
+                                              && hasContextImages(contextMessages);
+            
+            if (contextImageEnabled) {
+                // 在后台线程处理上下文图片和当前图片
+                Log.d(TAG, "启用了上下文图片识别，在后台线程处理所有图片");
+                final String finalConversationId = conversationId;
+                new Thread(() -> {
+                    try {
+                        // 处理上下文图片
+                        processContextImagesForMainAi(context, finalConversationId, contextMessages);
+                        
+                        // 处理当前消息图片
+                        List<String> imageBase64List = new java.util.ArrayList<>();
+                        for (int i = 0; i < imageElements.size(); i++) {
+                            ImageExtractor.ImageElement img = imageElements.get(i);
+                            String base64 = ImageBase64Helper.fromImageElement(img);
+                            if (base64 != null) {
+                                imageBase64List.add(base64);
+                            }
+                        }
+                        
+                        // 在主线程调用AI
+                        mainHandler.post(() -> {
+                            if (!imageBase64List.isEmpty()) {
+                                fetchOptionsInternal(context, userMessage, currentSenderName, currentTimestamp, 
+                                                    contextMessages, customPrompt, imageBase64List, finalConversationId, callback, false);
+                            } else {
+                                fetchOptionsInternal(context, userMessage, currentSenderName, currentTimestamp, 
+                                                    contextMessages, customPrompt, null, finalConversationId, callback, false);
+                            }
+                        });
+                    } catch (Exception e) {
+                        Log.e(TAG, "处理图片失败: " + e.getMessage());
+                        mainHandler.post(() -> {
+                            fetchOptionsInternal(context, userMessage, currentSenderName, currentTimestamp, 
+                                                contextMessages, customPrompt, null, callback, false);
+                        });
+                    }
+                }).start();
+                return;
+            }
+            
+            // 不需要处理上下文图片，直接处理当前消息图片
+            List<String> imageBase64List = new java.util.ArrayList<>();
+            for (int i = 0; i < imageElements.size(); i++) {
+                ImageExtractor.ImageElement img = imageElements.get(i);
+                Log.d(TAG, "处理图片 " + (i + 1) + "/" + imageElements.size() + ": " + img);
+                String base64 = ImageBase64Helper.fromImageElement(img);
+                if (base64 != null) {
+                    imageBase64List.add(base64);
+                    Log.d(TAG, "图片 " + (i + 1) + " Base64获取成功，长度=" + base64.length());
+                } else {
+                    Log.w(TAG, "图片 " + (i + 1) + " Base64获取失败");
+                }
+            }
+            
+            Log.d(TAG, "成功获取 " + imageBase64List.size() + "/" + imageElements.size() + " 张图片的Base64");
+            
+            if (!imageBase64List.isEmpty()) {
+                fetchOptionsInternal(context, userMessage, currentSenderName, currentTimestamp, 
+                                    contextMessages, customPrompt, imageBase64List, callback, false);
+            } else {
+                // 无法获取图片Base64，降级为普通请求
+                Log.w(TAG, "无法获取任何图片Base64，降级为普通请求");
+                fetchOptionsInternal(context, userMessage, currentSenderName, currentTimestamp, 
+                                    contextMessages, customPrompt, null, callback, false);
+            }
+        }
+    }
+    
+    /**
+     * 使用外挂AI处理图片，获取描述后再调用主AI
+     * 支持缓存和速率限制
+     * 
+     * @param conversationId 会话ID（用于缓存）
+     * @param msgId 消息ID（用于缓存和标识）
+     */
+    private static void processImagesWithVisionAi(Context context, String userMessage,
+                                    String currentSenderName, long currentTimestamp,
+                                    List<top.galqq.utils.MessageContextManager.ChatMessage> contextMessages,
+                                    String customPrompt,
+                                    List<ImageExtractor.ImageElement> imageElements,
+                                    AiCallback callback) {
+        processImagesWithVisionAi(context, userMessage, currentSenderName, currentTimestamp,
+                                  contextMessages, customPrompt, imageElements, null, null, callback);
+    }
+    
+    /**
+     * 使用外挂AI处理图片，获取描述后再调用主AI
+     * 支持缓存和速率限制
+     * 
+     * @param conversationId 会话ID（用于缓存）
+     * @param msgId 消息ID（用于缓存和标识）
+     */
+    private static void processImagesWithVisionAi(Context context, String userMessage,
+                                    String currentSenderName, long currentTimestamp,
+                                    List<top.galqq.utils.MessageContextManager.ChatMessage> contextMessages,
+                                    String customPrompt,
+                                    List<ImageExtractor.ImageElement> imageElements,
+                                    String conversationId, String msgId,
+                                    AiCallback callback) {
+        // 在后台线程处理图片
+        new Thread(() -> {
+            try {
+                // 【上下文图片识别】先识别上下文中未识别的图片
+                if (ConfigManager.isContextImageRecognitionEnabled() && conversationId != null && contextMessages != null) {
+                    recognizeContextImages(context, conversationId, contextMessages);
+                }
+                
+                List<String> imageDescriptions;
+                
+                // 如果有会话ID和消息ID，使用带缓存的队列
+                if (conversationId != null && msgId != null) {
+                    Log.d(TAG, "使用VisionAiQueue处理图片，conversationId=" + conversationId + ", msgId=" + msgId);
+                    imageDescriptions = VisionAiQueue.getInstance().recognizeSync(
+                        context, conversationId, msgId, imageElements);
+                } else {
+                    // 降级：直接处理（不缓存）
+                    Log.d(TAG, "无会话/消息ID，直接处理图片");
+                    imageDescriptions = new java.util.ArrayList<>();
+                    
+                    for (int i = 0; i < imageElements.size(); i++) {
+                        ImageExtractor.ImageElement img = imageElements.get(i);
+                        String base64 = ImageBase64Helper.fromImageElement(img);
+                        
+                        if (base64 != null) {
+                            Log.d(TAG, "正在识别图片 " + (i + 1) + "/" + imageElements.size());
+                            String description = VisionAiClient.analyzeImageSync(base64);
+                            
+                            if (description != null && !description.isEmpty()) {
+                                imageDescriptions.add(description);
+                                Log.d(TAG, "图片" + (i + 1) + "描述: " + description);
+                            } else {
+                                imageDescriptions.add("[图片识别失败]");
+                                Log.w(TAG, "图片" + (i + 1) + "识别失败");
+                            }
+                        } else {
+                            imageDescriptions.add("[无法读取图片]");
+                            Log.w(TAG, "图片" + (i + 1) + "无法读取");
+                        }
+                    }
+                }
+                
+                // 合并图片描述到消息内容
+                String mergedMessage = ImageContextManager.mergeImageContext(
+                    userMessage, imageDescriptions, null);
+                
+                // 记录图片识别日志
+                AiLogManager.logImageRecognition(context, imageElements.size(), 0, 
+                    imageDescriptions, System.currentTimeMillis());
+                
+                // 在主线程调用主AI（传递conversationId用于上下文图片）
+                final String finalConversationId = conversationId;
+                mainHandler.post(() -> {
+                    fetchOptionsInternal(context, mergedMessage, currentSenderName, currentTimestamp, 
+                                        contextMessages, customPrompt, null, finalConversationId, callback, false);
+                });
+                
+            } catch (Exception e) {
+                Log.e(TAG, "图片处理失败", e);
+                AiLogManager.logImageRecognitionError(context, imageElements.size(), e.getMessage());
+                
+                // 降级为不带图片的请求
+                final String finalConversationId = conversationId;
+                mainHandler.post(() -> {
+                    fetchOptionsInternal(context, userMessage, currentSenderName, currentTimestamp, 
+                                        contextMessages, customPrompt, null, finalConversationId, callback, false);
+                });
+            }
+        }).start();
+    }
+    
+    /**
+     * 检查上下文消息中是否有图片
+     * @param contextMessages 上下文消息列表
+     * @return true 如果有图片
+     */
+    private static boolean hasContextImages(List<top.galqq.utils.MessageContextManager.ChatMessage> contextMessages) {
+        if (contextMessages == null || contextMessages.isEmpty()) {
+            return false;
+        }
+        for (top.galqq.utils.MessageContextManager.ChatMessage msg : contextMessages) {
+            // 检查 hasImages 标记
+            if (msg.hasImages && msg.imageCount > 0) {
+                return true;
+            }
+            // 也检查消息内容中是否包含图片URL（兼容历史消息）
+            if (msg.content != null && msg.content.contains("[图片:") && msg.content.contains("multimedia.nt.qq.com.cn")) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    /**
+     * 处理上下文图片（用于主AI直接识别，不使用外挂AI）
+     * 将上下文消息中的图片转换为base64并缓存
+     * 
+     * @param context Android上下文
+     * @param conversationId 会话ID
+     * @param contextMessages 上下文消息列表
+     */
+    private static void processContextImagesForMainAi(Context context, String conversationId,
+                                                      List<top.galqq.utils.MessageContextManager.ChatMessage> contextMessages) {
+        if (contextMessages == null || contextMessages.isEmpty()) {
+            return;
+        }
+        
+        Log.d(TAG, "开始处理上下文图片（主AI模式），消息数=" + contextMessages.size());
+        
+        for (top.galqq.utils.MessageContextManager.ChatMessage msg : contextMessages) {
+            // 方式1：使用缓存的图片元素
+            if (msg.hasImages && msg.msgId != null && msg.imageCount > 0) {
+                // 检查是否已经全部处理过
+                if (ImageDescriptionCache.hasAll(conversationId, msg.msgId, msg.imageCount)) {
+                    Log.d(TAG, "消息 " + msg.msgId + " 的图片已全部处理，跳过");
+                    continue;
+                }
+                
+                // 获取缓存的图片元素
+                java.util.List<ImageExtractor.ImageElement> imageElements = 
+                    ImageDescriptionCache.getImageElements(conversationId, msg.msgId);
+                
+                if (imageElements != null && !imageElements.isEmpty()) {
+                    Log.d(TAG, "处理消息 " + msg.msgId + " 的 " + imageElements.size() + " 张图片（使用缓存元素）");
+                    
+                    for (int i = 0; i < imageElements.size(); i++) {
+                        if (ImageDescriptionCache.has(conversationId, msg.msgId, i)) {
+                            continue;
+                        }
+                        
+                        ImageExtractor.ImageElement img = imageElements.get(i);
+                        String base64 = ImageBase64Helper.fromImageElement(img);
+                        
+                        if (base64 != null) {
+                            ImageDescriptionCache.put(conversationId, msg.msgId, i, "BASE64:" + base64);
+                            Log.d(TAG, "图片 " + (i + 1) + " base64获取成功，长度=" + base64.length());
+                        } else {
+                            ImageDescriptionCache.put(conversationId, msg.msgId, i, "[无法读取图片]");
+                            Log.w(TAG, "图片 " + (i + 1) + " base64获取失败");
+                        }
+                    }
+                    continue;
+                }
+            }
+            
+            // 方式2：从消息内容中提取图片URL（兼容历史消息）
+            if (msg.content != null && msg.content.contains("[图片:") && msg.content.contains("multimedia.nt.qq.com.cn")) {
+                Log.d(TAG, "从消息内容中提取图片URL: " + msg.msgId);
+                
+                // 使用正则表达式提取图片URL
+                java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(
+                    "\\[图片:\\s*(https?://[^\\s\\]]+)");
+                java.util.regex.Matcher matcher = pattern.matcher(msg.content);
+                
+                int imageIndex = 0;
+                while (matcher.find()) {
+                    String imageUrl = matcher.group(1);
+                    // 移除可能的尺寸信息
+                    if (imageUrl.contains(" (")) {
+                        imageUrl = imageUrl.substring(0, imageUrl.indexOf(" ("));
+                    }
+                    
+                    String cacheKey = msg.msgId != null ? msg.msgId : ("url_" + imageUrl.hashCode());
+                    
+                    // 检查是否已处理
+                    if (ImageDescriptionCache.has(conversationId, cacheKey, imageIndex)) {
+                        imageIndex++;
+                        continue;
+                    }
+                    
+                    Log.d(TAG, "下载图片: " + imageUrl);
+                    
+                    // 下载图片并转换为base64
+                    try {
+                        String base64 = ImageDownloader.downloadAndConvertToBase64ByUrl(imageUrl, context);
+                        if (base64 != null && !base64.isEmpty()) {
+                            // 添加MIME前缀
+                            String mimeType = ImageDownloader.getMimeTypeFromUrl(imageUrl);
+                            String fullBase64 = "data:" + mimeType + ";base64," + base64;
+                            ImageDescriptionCache.put(conversationId, cacheKey, imageIndex, "BASE64:" + fullBase64);
+                            Log.d(TAG, "图片下载成功，base64长度=" + base64.length());
+                        } else {
+                            ImageDescriptionCache.put(conversationId, cacheKey, imageIndex, "[无法下载图片]");
+                            Log.w(TAG, "图片下载失败");
+                        }
+                    } catch (Exception e) {
+                        ImageDescriptionCache.put(conversationId, cacheKey, imageIndex, "[下载图片异常: " + e.getMessage() + "]");
+                        Log.e(TAG, "下载图片异常: " + e.getMessage());
+                    }
+                    
+                    imageIndex++;
+                }
+            }
+        }
+        
+        Log.d(TAG, "上下文图片处理完成（主AI模式）");
+    }
+    
+    /**
+     * 识别上下文消息中的图片
+     * 遍历上下文消息，对于有图片但未识别的消息，调用外挂AI进行识别
+     * 
+     * @param context Android上下文
+     * @param conversationId 会话ID
+     * @param contextMessages 上下文消息列表
+     */
+    private static void recognizeContextImages(Context context, String conversationId,
+                                               List<top.galqq.utils.MessageContextManager.ChatMessage> contextMessages) {
+        if (contextMessages == null || contextMessages.isEmpty()) {
+            return;
+        }
+        
+        Log.d(TAG, "开始识别上下文图片，消息数=" + contextMessages.size());
+        
+        for (top.galqq.utils.MessageContextManager.ChatMessage msg : contextMessages) {
+            if (!msg.hasImages || msg.msgId == null || msg.imageCount <= 0) {
+                continue;
+            }
+            
+            // 检查是否已经全部识别过
+            if (ImageDescriptionCache.hasAll(conversationId, msg.msgId, msg.imageCount)) {
+                Log.d(TAG, "消息 " + msg.msgId + " 的图片已全部识别，跳过");
+                continue;
+            }
+            
+            // 获取缓存的图片元素
+            java.util.List<ImageExtractor.ImageElement> imageElements = 
+                ImageDescriptionCache.getImageElements(conversationId, msg.msgId);
+            
+            if (imageElements == null || imageElements.isEmpty()) {
+                Log.d(TAG, "消息 " + msg.msgId + " 没有缓存的图片元素，跳过");
+                continue;
+            }
+            
+            Log.d(TAG, "识别消息 " + msg.msgId + " 的 " + imageElements.size() + " 张图片");
+            
+            // 使用 VisionAiQueue 同步识别（会自动使用缓存和速率限制）
+            try {
+                VisionAiQueue.getInstance().recognizeSync(context, conversationId, msg.msgId, imageElements);
+            } catch (Exception e) {
+                Log.e(TAG, "识别上下文图片失败: " + e.getMessage());
+            }
+        }
+        
+        Log.d(TAG, "上下文图片识别完成");
     }
 
     /**
@@ -462,6 +912,7 @@ public class HttpAiClient {
      * @param currentTimestamp 当前消息时间戳
      * @param contextMessages 历史上下文消息（可为null）
      * @param customPrompt 自定义提示词内容（如果为null则使用默认）
+     * @param imageBase64List 图片Base64编码列表（可为null，用于直接发送图片给支持Vision的AI）
      * @param callback 回调
      * @param suppressToast 是否抑制Toast提示（重试时使用）
      */
@@ -469,6 +920,32 @@ public class HttpAiClient {
                                     String currentSenderName, long currentTimestamp,
                                     List<top.galqq.utils.MessageContextManager.ChatMessage> contextMessages,
                                     String customPrompt,
+                                    List<String> imageBase64List,
+                                    AiCallback callback, boolean suppressToast) {
+        fetchOptionsInternal(context, userMessage, currentSenderName, currentTimestamp,
+                            contextMessages, customPrompt, imageBase64List, null, callback, suppressToast);
+    }
+    
+    /**
+     * 内部实现 - 获取AI生成的回复选项（带会话ID支持上下文图片）
+     * 
+     * @param context Android上下文
+     * @param userMessage 当前用户消息内容
+     * @param currentSenderName 当前消息发送人昵称
+     * @param currentTimestamp 当前消息时间戳
+     * @param contextMessages 历史上下文消息（可为null）
+     * @param customPrompt 自定义提示词内容（如果为null则使用默认）
+     * @param imageBase64List 图片Base64编码列表（可为null，用于直接发送图片给支持Vision的AI）
+     * @param conversationId 会话ID（用于上下文图片缓存）
+     * @param callback 回调
+     * @param suppressToast 是否抑制Toast提示（重试时使用）
+     */
+    private static void fetchOptionsInternal(Context context, String userMessage,
+                                    String currentSenderName, long currentTimestamp,
+                                    List<top.galqq.utils.MessageContextManager.ChatMessage> contextMessages,
+                                    String customPrompt,
+                                    List<String> imageBase64List,
+                                    String conversationId,
                                     AiCallback callback, boolean suppressToast) {
         String apiUrl = ConfigManager.getApiUrl();
         String apiKey = ConfigManager.getApiKey();
@@ -515,6 +992,11 @@ public class HttpAiClient {
                 // 创建时间格式化器
                 java.text.SimpleDateFormat timeFormat = new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault());
                 
+                // 检查是否启用上下文图片识别（不再要求必须启用外挂AI）
+                boolean contextImageEnabled = ConfigManager.isContextImageRecognitionEnabled() 
+                                            && ConfigManager.isImageRecognitionEnabled()
+                                            && conversationId != null;
+                
                 for (top.galqq.utils.MessageContextManager.ChatMessage msg : contextMessages) {
                     JSONObject ctxMsg = new JSONObject();
                     // 对方的消息作为"user"，自己的消息作为"assistant"
@@ -523,9 +1005,95 @@ public class HttpAiClient {
                     // 格式化时间戳
                     String timeStr = timeFormat.format(new java.util.Date(msg.timestamp));
                     
+                    // 获取消息内容
+                    String msgContent = msg.content;
+                    
+                    // 如果启用上下文图片识别，尝试获取缓存的图片描述或base64
+                    // 扩展条件：检查 hasImages 或消息内容中包含图片URL
+                    boolean hasImageContent = msg.hasImages && msg.imageCount > 0;
+                    boolean hasImageUrl = msg.content != null && msg.content.contains("[图片:") && msg.content.contains("multimedia.nt.qq.com.cn");
+                    
+                    if (contextImageEnabled && (hasImageContent || hasImageUrl)) {
+                        java.util.List<String> base64Images = new java.util.ArrayList<>();
+                        java.util.List<String> textDescriptions = new java.util.ArrayList<>();
+                        boolean hasBase64Images = false;
+                        
+                        // 方式1：从 hasImages 标记的消息获取缓存
+                        if (hasImageContent && msg.msgId != null) {
+                            java.util.List<String> cachedDescriptions = ImageDescriptionCache.getAll(conversationId, msg.msgId, msg.imageCount);
+                            for (String cached : cachedDescriptions) {
+                                if (cached != null && cached.startsWith("BASE64:")) {
+                                    hasBase64Images = true;
+                                    base64Images.add(cached.substring(7)); // 去掉 "BASE64:" 前缀
+                                } else if (cached != null) {
+                                    textDescriptions.add(cached);
+                                }
+                            }
+                        }
+                        
+                        // 方式2：从消息内容中提取的图片URL获取缓存
+                        if (!hasBase64Images && hasImageUrl) {
+                            java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(
+                                "\\[图片:\\s*(https?://[^\\s\\]]+)");
+                            java.util.regex.Matcher matcher = pattern.matcher(msg.content);
+                            
+                            int imageIndex = 0;
+                            while (matcher.find()) {
+                                String imageUrl = matcher.group(1);
+                                if (imageUrl.contains(" (")) {
+                                    imageUrl = imageUrl.substring(0, imageUrl.indexOf(" ("));
+                                }
+                                
+                                String cacheKey = msg.msgId != null ? msg.msgId : ("url_" + imageUrl.hashCode());
+                                String cached = ImageDescriptionCache.get(conversationId, cacheKey, imageIndex);
+                                
+                                if (cached != null && cached.startsWith("BASE64:")) {
+                                    hasBase64Images = true;
+                                    base64Images.add(cached.substring(7));
+                                } else if (cached != null) {
+                                    textDescriptions.add(cached);
+                                }
+                                
+                                imageIndex++;
+                            }
+                        }
+                        
+                        if (hasBase64Images) {
+                            // 有base64图片，需要构建带图片的content数组
+                            JSONArray contentArray = new JSONArray();
+                            
+                            // 添加文本内容
+                            String textContent = msg.senderName + " [" + timeStr + "]: " + msgContent;
+                            if (!textDescriptions.isEmpty()) {
+                                textContent += "\n[图片描述: " + String.join(", ", textDescriptions) + "]";
+                            }
+                            JSONObject textObj = new JSONObject();
+                            textObj.put("type", "text");
+                            textObj.put("text", textContent);
+                            contentArray.put(textObj);
+                            
+                            // 添加图片
+                            for (String base64 : base64Images) {
+                                JSONObject imageContent = new JSONObject();
+                                imageContent.put("type", "image_url");
+                                JSONObject imageUrlObj = new JSONObject();
+                                imageUrlObj.put("url", base64); // base64已经带有data:image前缀
+                                imageUrlObj.put("detail", "low");
+                                imageContent.put("image_url", imageUrlObj);
+                                contentArray.put(imageContent);
+                            }
+                            
+                            ctxMsg.put("content", contentArray);
+                            messages.put(ctxMsg);
+                            continue; // 跳过下面的普通处理
+                        } else if (!textDescriptions.isEmpty()) {
+                            // 只有文字描述（外挂AI识别的结果）
+                            msgContent = msg.getContentWithImageDescriptions(conversationId);
+                        }
+                    }
+                    
                     // 格式化为 "发送人 [时间]: 消息内容"
-                    // 格式化为 "发送人 [时间]: 消息内容"
-                    String formattedContent = msg.senderName + " [" + timeStr + "]: " + msg.content;
+                    String formattedContent = msg.senderName + " [" + timeStr + "]: " + msgContent;
                     ctxMsg.put("content", formattedContent);
                     messages.put(ctxMsg);
                 }
@@ -550,7 +1118,41 @@ public class HttpAiClient {
                 formattedCurrentMsg = "[当前需添加选项信息] " + userMessage;
             }
             
-            userMsg.put("content", formattedCurrentMsg);
+            // 检查是否有图片需要发送（OpenAI Vision格式）
+            if (imageBase64List != null && !imageBase64List.isEmpty()) {
+                // 构建带图片的content数组（OpenAI Vision格式）
+                JSONArray contentArray = new JSONArray();
+                
+                // 添加文本内容
+                JSONObject textContent = new JSONObject();
+                textContent.put("type", "text");
+                textContent.put("text", formattedCurrentMsg);
+                contentArray.put(textContent);
+                
+                // 添加图片内容
+                for (String imageBase64 : imageBase64List) {
+                    JSONObject imageContent = new JSONObject();
+                    imageContent.put("type", "image_url");
+                    
+                    JSONObject imageUrlObj = new JSONObject();
+                    // 确保Base64带有正确的前缀
+                    if (imageBase64.startsWith("data:image")) {
+                        imageUrlObj.put("url", imageBase64);
+                    } else {
+                        imageUrlObj.put("url", "data:image/png;base64," + imageBase64);
+                    }
+                    imageUrlObj.put("detail", "low"); // 使用低分辨率节省token
+                    imageContent.put("image_url", imageUrlObj);
+                    contentArray.put(imageContent);
+                }
+                
+                userMsg.put("content", contentArray);
+                Log.d(TAG, "构建带图片的请求，图片数: " + imageBase64List.size());
+            } else {
+                // 普通文本消息
+                userMsg.put("content", formattedCurrentMsg);
+            }
+            
             messages.put(userMsg);
 
             jsonBody.put("messages", messages);
@@ -569,7 +1171,9 @@ public class HttpAiClient {
 
             // 记录完整的请求信息到日志（仅在启用详细日志时）
             if (ConfigManager.isVerboseLogEnabled()) {
-                String requestLog = buildRequestLog(provider, model, apiUrl, apiKey, jsonBody.toString());
+                // 日志中截断base64内容（200字符），但实际请求包保持完整
+                String jsonForLog = truncateBase64InJson(jsonBody.toString(), 200);
+                String requestLog = buildRequestLog(provider, model, apiUrl, apiKey, jsonForLog);
                 Log.d(TAG, "发送AI请求:\n" + requestLog);
                 AiLogManager.addLog(context, "AI请求\n" + requestLog);
             } else {
@@ -1642,6 +2246,65 @@ public class HttpAiClient {
      */
     private static void logError(Context context, String provider, String model, String url, String error) {
         AiLogManager.logAiError(context, provider, model, url, error);
+    }
+    
+    /**
+     * 截断JSON中的Base64内容用于日志显示
+     * 实际发送的请求包保持完整，只有日志中的内容被截断
+     * @param json 原始JSON字符串
+     * @param maxBase64Length Base64内容的最大显示长度
+     * @return 截断后的JSON字符串（仅用于日志）
+     */
+    private static String truncateBase64InJson(String json, int maxBase64Length) {
+        if (json == null) return "null";
+        
+        // 查找 data:image 开头的base64内容并截断
+        StringBuilder result = new StringBuilder();
+        int i = 0;
+        while (i < json.length()) {
+            int dataStart = json.indexOf("data:image", i);
+            if (dataStart == -1) {
+                result.append(json.substring(i));
+                break;
+            }
+            
+            result.append(json.substring(i, dataStart));
+            
+            // 找到base64内容的结束位置（引号）
+            int contentEnd = -1;
+            boolean inEscape = false;
+            for (int j = dataStart; j < json.length(); j++) {
+                char c = json.charAt(j);
+                if (inEscape) {
+                    inEscape = false;
+                    continue;
+                }
+                if (c == '\\') {
+                    inEscape = true;
+                    continue;
+                }
+                if (c == '"') {
+                    contentEnd = j;
+                    break;
+                }
+            }
+            
+            if (contentEnd == -1) {
+                contentEnd = json.length();
+            }
+            
+            String base64Content = json.substring(dataStart, contentEnd);
+            if (base64Content.length() > maxBase64Length) {
+                // 截断并添加提示
+                result.append(base64Content.substring(0, maxBase64Length)).append("...[base64截断,原长度:").append(base64Content.length()).append("]");
+            } else {
+                result.append(base64Content);
+            }
+            
+            i = contentEnd;
+        }
+        
+        return result.toString();
     }
 
     /**

@@ -6,7 +6,7 @@
 
     <application
         android:label="GalQQ"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@drawable/ic_xposed"
         android:theme="@android:style/Theme.DeviceDefault.Settings">
         
         <meta-data
@@ -25,12 +25,16 @@
             android:name="xposed.icon"
             android:resource="@drawable/ic_xposed" />
 
-        <!-- ModuleInfoActivity - LSPosed 入口，显示模块介绍界面 -->
+        <!-- ModuleInfoActivity - 桌面入口 + LSPosed 入口，显示模块介绍界面 -->
         <activity
             android:name=".ui.ModuleInfoActivity"
             android:label="GalQQ"
             android:exported="true"
             android:theme="@style/Theme.GalQQ.DayNight">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="de.robv.android.xposed.category.MODULE_SETTINGS" />

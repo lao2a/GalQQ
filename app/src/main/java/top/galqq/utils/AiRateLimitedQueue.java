@@ -126,10 +126,48 @@ public class AiRateLimitedQueue {
                               String currentSenderName, long currentTimestamp,
                               String senderQQ, String customSystemPrompt,
                               HttpAiClient.AiCallback callback) {
+        submitRequest(context, msgContent, msgId, priority, contextMessages, 
+                     currentSenderName, currentTimestamp, senderQQ, customSystemPrompt, 
+                     null, callback);
+    }
+    
+    /**
+     * 提交AI请求（带优先级、上下文、发送者QQ、自定义提示词和图片元素）
+     * 
+     * @param senderQQ 发送者QQ号，用于黑白名单过滤
+     * @param customSystemPrompt 自定义系统提示词，如果为null则使用默认
+     * @param imageElements 图片元素列表，用于图片识别
+     */
+    public void submitRequest(Context context, String msgContent, String msgId, Priority priority, 
+                              List<top.galqq.utils.MessageContextManager.ChatMessage> contextMessages,
+                              String currentSenderName, long currentTimestamp,
+                              String senderQQ, String customSystemPrompt,
+                              List<ImageExtractor.ImageElement> imageElements,
+                              HttpAiClient.AiCallback callback) {
+        submitRequest(context, msgContent, msgId, priority, contextMessages,
+                     currentSenderName, currentTimestamp, senderQQ, customSystemPrompt,
+                     imageElements, null, callback);
+    }
+    
+    /**
+     * 提交AI请求（带优先级、上下文、发送者QQ、自定义提示词、图片元素和会话ID）
+     * 
+     * @param senderQQ 发送者QQ号，用于黑白名单过滤
+     * @param customSystemPrompt 自定义系统提示词，如果为null则使用默认
+     * @param imageElements 图片元素列表，用于图片识别
+     * @param conversationId 会话ID，用于图片描述缓存
+     */
+    public void submitRequest(Context context, String msgContent, String msgId, Priority priority, 
+                              List<top.galqq.utils.MessageContextManager.ChatMessage> contextMessages,
+                              String currentSenderName, long currentTimestamp,
+                              String senderQQ, String customSystemPrompt,
+                              List<ImageExtractor.ImageElement> imageElements,
+                              String conversationId,
+                              HttpAiClient.AiCallback callback) {
         PrioritizedRequest request = new PrioritizedRequest(
             context, msgContent, msgId, priority, contextMessages, 
             currentSenderName, currentTimestamp, senderQQ, customSystemPrompt, 
-            callback, System.currentTimeMillis()
+            imageElements, conversationId, callback, System.currentTimeMillis()
         );
         
         boolean added = requestQueue.offer(request);
@@ -305,56 +343,52 @@ public class AiRateLimitedQueue {
         final List<String>[] resultHolder = new List[1];
         final Exception[] errorHolder = new Exception[1];
         
+        HttpAiClient.AiCallback syncCallback = new HttpAiClient.AiCallback() {
+            @Override
+            public void onSuccess(List<String> options) {
+                synchronized (lock) {
+                    resultHolder[0] = options;
+                    lock.notify();
+                }
+            }
+            
+            @Override
+            public void onFailure(Exception e) {
+                synchronized (lock) {
+                    errorHolder[0] = e;
+                    lock.notify();
+                }
+            }
+        };
+        
         synchronized (lock) {
-            // 异步调用转同步（带上下文和自定义提示词）
-            // 使用静默版本，不显示Toast（由队列统一管理重试和错误提示）
-            if (request.customSystemPrompt != null && !request.customSystemPrompt.isEmpty()) {
+            // 检查是否有图片需要处理
+            boolean hasImages = request.imageElements != null && !request.imageElements.isEmpty() 
+                               && ConfigManager.isImageRecognitionEnabled();
+            
+            if (hasImages) {
+                // 使用带图片的方法（传递conversationId和msgId用于缓存）
+                debugLog(TAG + ": 检测到图片，使用fetchOptionsWithImages处理");
+                HttpAiClient.fetchOptionsWithImages(request.context, request.msgContent,
+                                         request.currentSenderName, request.currentTimestamp,
+                                         request.contextMessages, request.customSystemPrompt,
+                                         request.imageElements, request.conversationId, request.msgId,
+                                         syncCallback);
+            } else if (request.customSystemPrompt != null && !request.customSystemPrompt.isEmpty()) {
                 // 使用自定义提示词（静默模式）
                 HttpAiClient.fetchOptionsWithPromptSilent(request.context, request.msgContent,
                                          request.currentSenderName, request.currentTimestamp,
                                          request.contextMessages, request.customSystemPrompt,
-                                         new HttpAiClient.AiCallback() {
-                    @Override
-                    public void onSuccess(List<String> options) {
-                        synchronized (lock) {
-                            resultHolder[0] = options;
-                            lock.notify();
-                        }
-                    }
-                    
-                    @Override
-                    public void onFailure(Exception e) {
-                        synchronized (lock) {
-                            errorHolder[0] = e;
-                            lock.notify();
-                        }
-                    }
-                });
+                                         syncCallback);
             } else {
                 // 使用默认提示词（静默模式）
                 HttpAiClient.fetchOptionsSilent(request.context, request.msgContent,
                                          request.currentSenderName, request.currentTimestamp,
-                                         request.contextMessages, new HttpAiClient.AiCallback() {
-                    @Override
-                    public void onSuccess(List<String> options) {
-                        synchronized (lock) {
-                            resultHolder[0] = options;
-                            lock.notify();
-                        }
-                    }
-                    
-                    @Override
-                    public void onFailure(Exception e) {
-                        synchronized (lock) {
-                            errorHolder[0] = e;
-                            lock.notify();
-                        }
-                    }
-                });
+                                         request.contextMessages, syncCallback);
             }
             
-            // 等待结果（最多30秒）
-            lock.wait(30000);
+            // 等待结果（最多60秒，图片处理可能需要更长时间）
+            lock.wait(60000);
         }
         
         if (errorHolder[0] != null) {
@@ -450,6 +484,8 @@ public class AiRateLimitedQueue {
         final long currentTimestamp; // 当前消息时间戳
         final String senderQQ; // 发送者QQ号（用于黑白名单过滤）
         final String customSystemPrompt; // 自定义系统提示词
+        final List<ImageExtractor.ImageElement> imageElements; // 图片元素列表
+        final String conversationId; // 会话ID（用于图片描述缓存）
         final HttpAiClient.AiCallback callback;
         final long timestamp;  // 同优先级按时间排序
         
@@ -458,13 +494,25 @@ public class AiRateLimitedQueue {
                           String currentSenderName, long currentTimestamp,
                           HttpAiClient.AiCallback callback, long timestamp) {
             this(context, msgContent, msgId, priority, contextMessages, currentSenderName, 
-                 currentTimestamp, null, null, callback, timestamp);
+                 currentTimestamp, null, null, null, null, callback, timestamp);
         }
         
         PrioritizedRequest(Context context, String msgContent, String msgId, Priority priority, 
                           List<top.galqq.utils.MessageContextManager.ChatMessage> contextMessages,
                           String currentSenderName, long currentTimestamp,
                           String senderQQ, String customSystemPrompt,
+                          List<ImageExtractor.ImageElement> imageElements,
+                          HttpAiClient.AiCallback callback, long timestamp) {
+            this(context, msgContent, msgId, priority, contextMessages, currentSenderName,
+                 currentTimestamp, senderQQ, customSystemPrompt, imageElements, null, callback, timestamp);
+        }
+        
+        PrioritizedRequest(Context context, String msgContent, String msgId, Priority priority, 
+                          List<top.galqq.utils.MessageContextManager.ChatMessage> contextMessages,
+                          String currentSenderName, long currentTimestamp,
+                          String senderQQ, String customSystemPrompt,
+                          List<ImageExtractor.ImageElement> imageElements,
+                          String conversationId,
                           HttpAiClient.AiCallback callback, long timestamp) {
             this.context = context;
             this.msgContent = msgContent;
@@ -475,6 +523,8 @@ public class AiRateLimitedQueue {
             this.currentTimestamp = currentTimestamp;
             this.senderQQ = senderQQ;
             this.customSystemPrompt = customSystemPrompt;
+            this.imageElements = imageElements;
+            this.conversationId = conversationId;
             this.callback = callback;
             this.timestamp = timestamp;
         }

@@ -296,4 +296,43 @@ public class AppRuntimeHelper {
         }
         return System.currentTimeMillis();
     }
+    
+    /**
+     * 获取Application实例
+     * @return Application实例，获取失败返回null
+     */
+    public static android.app.Application getApplication() {
+        try {
+            // 方法1: 通过MobileQQ.sMobileQQ获取
+            Object mobileQQInstance = Initiator.getStaticObject("mqq.app.MobileQQ", "sMobileQQ");
+            if (mobileQQInstance != null && mobileQQInstance instanceof android.app.Application) {
+                return (android.app.Application) mobileQQInstance;
+            }
+            
+            // 方法2: 通过ActivityThread获取
+            Class<?> activityThreadClass = Class.forName("android.app.ActivityThread");
+            Object activityThread = activityThreadClass.getMethod("currentActivityThread").invoke(null);
+            if (activityThread != null) {
+                Object app = activityThreadClass.getMethod("getApplication").invoke(activityThread);
+                if (app instanceof android.app.Application) {
+                    return (android.app.Application) app;
+                }
+            }
+        } catch (Exception e) {
+            // XposedBridge.log("GalQQ: Failed to get Application: " + e.getMessage());
+        }
+        return null;
+    }
+    
+    /**
+     * 获取Context实例
+     * @return Context实例，获取失败返回null
+     */
+    public static Context getContext() {
+        android.app.Application app = getApplication();
+        if (app != null) {
+            return app.getApplicationContext();
+        }
+        return null;
+    }
 }

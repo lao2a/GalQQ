@@ -527,13 +527,13 @@ public class GalSettingsFragment extends PreferenceFragmentCompat {
             });
         }
 
-        // Join Group - 实现加入QQ群1026163188
+        // Join Group - 实现加入QQ群 859142525
         Preference joinGroupPref = findPreference("gal_join_group");
         if (joinGroupPref != null) {
             joinGroupPref.setOnPreferenceClickListener(preference -> {
                 try {
                     // QQ群号
-                    String groupNumber = "1026163188";
+                    String groupNumber = " 859142525";
                     
                     // 构建QQ群跳转链接（使用mqqapi协议）
                     // 格式：mqqapi://card/show_pslcard?src_type=internal&version=1&uin=群号&card_type=group&source=qrcode
@@ -720,6 +720,238 @@ public class GalSettingsFragment extends PreferenceFragmentCompat {
                 });
                 return true;
             });
+        }
+        
+        // ========== 图片识别设置 ==========
+        
+        // Image Recognition Enabled (启用图片识别)
+        Preference imageRecognitionSwitch = findPreference(ConfigManager.KEY_IMAGE_RECOGNITION_ENABLED);
+        if (imageRecognitionSwitch != null) {
+            if (imageRecognitionSwitch instanceof androidx.preference.TwoStatePreference) {
+                ((androidx.preference.TwoStatePreference) imageRecognitionSwitch).setChecked(ConfigManager.isImageRecognitionEnabled());
+            }
+            imageRecognitionSwitch.setOnPreferenceChangeListener((preference, newValue) -> {
+                ConfigManager.setImageRecognitionEnabled((Boolean) newValue);
+                return true;
+            });
+        }
+        
+        // Emoji Recognition Enabled (启用表情包识别)
+        Preference emojiRecognitionSwitch = findPreference(ConfigManager.KEY_EMOJI_RECOGNITION_ENABLED);
+        if (emojiRecognitionSwitch != null) {
+            if (emojiRecognitionSwitch instanceof androidx.preference.TwoStatePreference) {
+                ((androidx.preference.TwoStatePreference) emojiRecognitionSwitch).setChecked(ConfigManager.isEmojiRecognitionEnabled());
+            }
+            emojiRecognitionSwitch.setOnPreferenceChangeListener((preference, newValue) -> {
+                ConfigManager.setEmojiRecognitionEnabled((Boolean) newValue);
+                return true;
+            });
+        }
+        
+        // Vision AI Enabled (启用外挂AI)
+        Preference visionAiSwitch = findPreference(ConfigManager.KEY_VISION_AI_ENABLED);
+        if (visionAiSwitch != null) {
+            if (visionAiSwitch instanceof androidx.preference.TwoStatePreference) {
+                ((androidx.preference.TwoStatePreference) visionAiSwitch).setChecked(ConfigManager.isVisionAiEnabled());
+            }
+            visionAiSwitch.setOnPreferenceChangeListener((preference, newValue) -> {
+                ConfigManager.setVisionAiEnabled((Boolean) newValue);
+                return true;
+            });
+        }
+        
+        // Vision API URL (外挂AI API URL) - 需要先获取引用，供Provider切换时使用
+        EditTextPreference visionApiUrlPrefForProvider = findPreference(ConfigManager.KEY_VISION_API_URL);
+        
+        // Vision AI Provider (外挂AI服务商)
+        androidx.preference.ListPreference visionProviderPref = findPreference(ConfigManager.KEY_VISION_AI_PROVIDER);
+        if (visionProviderPref != null) {
+            String currentVisionProvider = ConfigManager.getVisionAiProvider();
+            visionProviderPref.setValue(currentVisionProvider);
+            updateVisionProviderSummary(visionProviderPref, currentVisionProvider);
+            
+            visionProviderPref.setOnPreferenceChangeListener((preference, newValue) -> {
+                String provider = (String) newValue;
+                ConfigManager.setVisionAiProvider(provider);
+                
+                // 自动填充API URL
+                String defaultUrl = ConfigManager.getDefaultVisionApiUrl(provider);
+                if (!defaultUrl.isEmpty()) {
+                    ConfigManager.setVisionApiUrl(defaultUrl);
+                    // 更新API URL EditTextPreference的显示
+                    if (visionApiUrlPrefForProvider != null) {
+                        visionApiUrlPrefForProvider.setText(defaultUrl);
+                        visionApiUrlPrefForProvider.setSummary(defaultUrl);
+                    }
+                }
+                
+                // 更新Provider的summary显示
+                updateVisionProviderSummary(visionProviderPref, provider);
+                return true;
+            });
+        }
+        
+        // Vision API URL (外挂AI API URL)
+        EditTextPreference visionApiUrlPref = findPreference(ConfigManager.KEY_VISION_API_URL);
+        if (visionApiUrlPref != null) {
+            visionApiUrlPref.setText(ConfigManager.getVisionApiUrl());
+            String url = ConfigManager.getVisionApiUrl();
+            visionApiUrlPref.setSummary(url.isEmpty() ? "图片识别API地址" : url);
+            visionApiUrlPref.setOnPreferenceChangeListener((preference, newValue) -> {
+                String newUrl = (String) newValue;
+                ConfigManager.setVisionApiUrl(newUrl);
+                visionApiUrlPref.setText(newUrl);
+                visionApiUrlPref.setSummary(newUrl.isEmpty() ? "图片识别API地址" : newUrl);
+                return true;
+            });
+        }
+        
+        // Vision API Key (外挂AI API Key)
+        EditTextPreference visionApiKeyPref = findPreference(ConfigManager.KEY_VISION_API_KEY);
+        if (visionApiKeyPref != null) {
+            visionApiKeyPref.setText(ConfigManager.getVisionApiKey());
+            String key = ConfigManager.getVisionApiKey();
+            visionApiKeyPref.setSummary(key.isEmpty() ? "图片识别API密钥" : "已设置 (*****)");
+            visionApiKeyPref.setOnPreferenceChangeListener((preference, newValue) -> {
+                String newKey = (String) newValue;
+                ConfigManager.setVisionApiKey(newKey);
+                visionApiKeyPref.setText(newKey);
+                visionApiKeyPref.setSummary(newKey.isEmpty() ? "图片识别API密钥" : "已设置 (*****)");
+                return true;
+            });
+        }
+        
+        // Vision AI Model (外挂AI模型)
+        EditTextPreference visionModelPref = findPreference(ConfigManager.KEY_VISION_AI_MODEL);
+        if (visionModelPref != null) {
+            visionModelPref.setText(ConfigManager.getVisionAiModel());
+            visionModelPref.setSummary("当前: " + ConfigManager.getVisionAiModel());
+            visionModelPref.setOnPreferenceChangeListener((preference, newValue) -> {
+                String model = (String) newValue;
+                ConfigManager.setVisionAiModel(model);
+                visionModelPref.setText(model);
+                visionModelPref.setSummary("当前: " + model);
+                return true;
+            });
+        }
+        
+        // Vision Use Proxy (外挂AI使用代理)
+        Preference visionUseProxySwitch = findPreference(ConfigManager.KEY_VISION_USE_PROXY);
+        if (visionUseProxySwitch != null) {
+            if (visionUseProxySwitch instanceof androidx.preference.TwoStatePreference) {
+                ((androidx.preference.TwoStatePreference) visionUseProxySwitch).setChecked(ConfigManager.isVisionUseProxy());
+            }
+            visionUseProxySwitch.setOnPreferenceChangeListener((preference, newValue) -> {
+                ConfigManager.setVisionUseProxy((Boolean) newValue);
+                return true;
+            });
+        }
+        
+        // Test Vision AI Button (测试外挂AI)
+        Preference testVisionAiPref = findPreference("gal_test_vision_ai");
+        if (testVisionAiPref != null) {
+            testVisionAiPref.setOnPreferenceClickListener(preference -> {
+                // 检查配置
+                if (!ConfigManager.isVisionAiEnabled()) {
+                    android.widget.Toast.makeText(requireContext(), "请先启用外挂AI", android.widget.Toast.LENGTH_SHORT).show();
+                    return true;
+                }
+                
+                String apiUrl = ConfigManager.getVisionApiUrl();
+                if (apiUrl == null || apiUrl.trim().isEmpty()) {
+                    android.widget.Toast.makeText(requireContext(), "请填写外挂AI API URL", android.widget.Toast.LENGTH_SHORT).show();
+                    return true;
+                }
+                
+                android.widget.Toast.makeText(requireContext(), "正在测试外挂AI连接...", android.widget.Toast.LENGTH_SHORT).show();
+                
+                top.galqq.utils.VisionAiClient.testConnection(requireContext(), (success, message) -> {
+                    android.app.Activity activity = getActivity();
+                    if (activity != null && isAdded()) {
+                        activity.runOnUiThread(() -> {
+                            new android.app.AlertDialog.Builder(activity)
+                                .setTitle(success ? "✅ 外挂AI测试成功" : "❌ 外挂AI测试失败")
+                                .setMessage(message)
+                                .setPositiveButton("确定", null)
+                                .show();
+                        });
+                    }
+                });
+                return true;
+            });
+        }
+        
+        // Image Max Size (图片大小限制)
+        EditTextPreference imageMaxSizePref = findPreference(ConfigManager.KEY_IMAGE_MAX_SIZE);
+        if (imageMaxSizePref != null) {
+            imageMaxSizePref.setText(String.valueOf(ConfigManager.getImageMaxSize()));
+            imageMaxSizePref.setSummary("当前: " + ConfigManager.getImageMaxSize() + " KB");
+            imageMaxSizePref.setOnPreferenceChangeListener((preference, newValue) -> {
+                try {
+                    int size = Integer.parseInt((String) newValue);
+                    if (size > 0) {
+                        ConfigManager.setImageMaxSize(size);
+                        imageMaxSizePref.setText((String) newValue);
+                        imageMaxSizePref.setSummary("当前: " + size + " KB");
+                        return true;
+                    }
+                } catch (Exception e) {}
+                return false;
+            });
+        }
+        
+        // Image Description Max Length (描述长度限制)
+        EditTextPreference descMaxLengthPref = findPreference(ConfigManager.KEY_IMAGE_DESCRIPTION_MAX_LENGTH);
+        if (descMaxLengthPref != null) {
+            descMaxLengthPref.setText(String.valueOf(ConfigManager.getImageDescriptionMaxLength()));
+            descMaxLengthPref.setSummary("当前: " + ConfigManager.getImageDescriptionMaxLength() + " 字符");
+            descMaxLengthPref.setOnPreferenceChangeListener((preference, newValue) -> {
+                try {
+                    int length = Integer.parseInt((String) newValue);
+                    if (length > 0) {
+                        ConfigManager.setImageDescriptionMaxLength(length);
+                        descMaxLengthPref.setText((String) newValue);
+                        descMaxLengthPref.setSummary("当前: " + length + " 字符");
+                        return true;
+                    }
+                } catch (Exception e) {}
+                return false;
+            });
+        }
+        
+        // Vision Timeout (识别超时时间)
+        EditTextPreference visionTimeoutPref = findPreference(ConfigManager.KEY_VISION_TIMEOUT);
+        if (visionTimeoutPref != null) {
+            visionTimeoutPref.setText(String.valueOf(ConfigManager.getVisionTimeout()));
+            visionTimeoutPref.setSummary("当前: " + ConfigManager.getVisionTimeout() + " 秒");
+            visionTimeoutPref.setOnPreferenceChangeListener((preference, newValue) -> {
+                try {
+                    int timeout = Integer.parseInt((String) newValue);
+                    if (timeout > 0) {
+                        ConfigManager.setVisionTimeout(timeout);
+                        visionTimeoutPref.setText((String) newValue);
+                        visionTimeoutPref.setSummary("当前: " + timeout + " 秒");
+                        return true;
+                    }
+                } catch (Exception e) {}
+                return false;
+            });
+        }
+    }
+    
+    /**
+     * 更新外挂AI服务商的summary显示
+     */
+    private void updateVisionProviderSummary(androidx.preference.ListPreference pref, String provider) {
+        String displayName = ConfigManager.getVisionProviderDisplayName(provider);
+        String apiUrl = ConfigManager.getDefaultVisionApiUrl(provider);
+        if (apiUrl.isEmpty()) {
+            apiUrl = ConfigManager.getVisionApiUrl();
+        }
+        if (apiUrl.isEmpty()) {
+            pref.setSummary(displayName);
+        } else {
+            pref.setSummary(displayName + "\n" + apiUrl);
         }
     }
 }

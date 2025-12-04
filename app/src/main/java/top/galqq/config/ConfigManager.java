@@ -98,6 +98,42 @@ public class ConfigManager {
     // Proxy Default Values
     public static final String DEFAULT_PROXY_TYPE = "HTTP";
     public static final int DEFAULT_PROXY_PORT = 7890;
+    
+    // ========== Image Recognition Keys (图片识别配置) ==========
+    
+    // 图片识别开关
+    public static final String KEY_IMAGE_RECOGNITION_ENABLED = "gal_image_recognition_enabled";
+    public static final String KEY_EMOJI_RECOGNITION_ENABLED = "gal_emoji_recognition_enabled";
+    
+    // 外挂AI配置
+    public static final String KEY_VISION_AI_ENABLED = "gal_vision_ai_enabled";
+    public static final String KEY_VISION_API_URL = "gal_vision_api_url";
+    public static final String KEY_VISION_API_KEY = "gal_vision_api_key";
+    public static final String KEY_VISION_AI_MODEL = "gal_vision_ai_model";
+    public static final String KEY_VISION_AI_PROVIDER = "gal_vision_ai_provider";
+    public static final String KEY_VISION_USE_PROXY = "gal_vision_use_proxy";
+    
+    // 图片识别参数
+    public static final String KEY_IMAGE_MAX_SIZE = "gal_image_max_size";
+    public static final String KEY_IMAGE_DESCRIPTION_MAX_LENGTH = "gal_image_description_max_length";
+    public static final String KEY_VISION_TIMEOUT = "gal_vision_timeout";
+    public static final String KEY_VISION_AI_QPS = "gal_vision_ai_qps"; // 外挂AI速率配置
+    
+    // 上下文图片识别配置
+    public static final String KEY_CONTEXT_IMAGE_RECOGNITION_ENABLED = "gal_context_image_recognition_enabled";
+    
+    // Image Recognition Default Values
+    public static final boolean DEFAULT_IMAGE_RECOGNITION_ENABLED = false;
+    public static final boolean DEFAULT_EMOJI_RECOGNITION_ENABLED = false;
+    public static final boolean DEFAULT_VISION_AI_ENABLED = false;
+    public static final boolean DEFAULT_VISION_USE_PROXY = false;
+    public static final int DEFAULT_IMAGE_MAX_SIZE = 2048; // 2MB (单位: KB)
+    public static final int DEFAULT_IMAGE_DESCRIPTION_MAX_LENGTH = 200; // 字符
+    public static final int DEFAULT_VISION_TIMEOUT = 30; // 30秒
+    public static final String DEFAULT_VISION_AI_MODEL = "gpt-4-vision-preview";
+    public static final String DEFAULT_VISION_AI_PROVIDER = PROVIDER_OPENAI;
+    public static final boolean DEFAULT_CONTEXT_IMAGE_RECOGNITION_ENABLED = false; // 默认不识别上下文图片
+    public static final float DEFAULT_VISION_AI_QPS = 1.0f; // 外挂AI默认速率（图片识别通常较慢，默认1 QPS）
 
     /**
      * Initialize MMKV with MULTI_PROCESS_MODE for cross-process access
@@ -544,8 +580,8 @@ public class ConfigManager {
     
     public static int getContextMessageCount() {
         int count = getMmkv().decodeInt(KEY_CONTEXT_MESSAGE_COUNT, DEFAULT_CONTEXT_MESSAGE_COUNT);
-        // 限制在1-30之间（从20改为30）
-        return Math.max(1, Math.min(30, count));
+        // 限制在1-200之间
+        return Math.max(1, Math.min(200, count));
     }
     
     public static void setContextMessageCount(int count) {
@@ -926,5 +962,323 @@ public class ConfigManager {
             default:
                 return "未知";
         }
+    }
+    
+    // ========== Image Recognition Methods (图片识别配置方法) ==========
+    
+    /**
+     * 检查图片识别功能是否启用
+     * @return true 如果启用图片识别
+     */
+    public static boolean isImageRecognitionEnabled() {
+        return getMmkv().decodeBool(KEY_IMAGE_RECOGNITION_ENABLED, DEFAULT_IMAGE_RECOGNITION_ENABLED);
+    }
+    
+    /**
+     * 设置图片识别开关
+     * @param enabled 是否启用图片识别
+     */
+    public static void setImageRecognitionEnabled(boolean enabled) {
+        getMmkv().encode(KEY_IMAGE_RECOGNITION_ENABLED, enabled);
+    }
+    
+    /**
+     * 检查表情包识别功能是否启用
+     * @return true 如果启用表情包识别
+     */
+    public static boolean isEmojiRecognitionEnabled() {
+        return getMmkv().decodeBool(KEY_EMOJI_RECOGNITION_ENABLED, DEFAULT_EMOJI_RECOGNITION_ENABLED);
+    }
+    
+    /**
+     * 设置表情包识别开关
+     * @param enabled 是否启用表情包识别
+     */
+    public static void setEmojiRecognitionEnabled(boolean enabled) {
+        getMmkv().encode(KEY_EMOJI_RECOGNITION_ENABLED, enabled);
+    }
+    
+    /**
+     * 检查外挂AI是否启用
+     * @return true 如果启用外挂AI
+     */
+    public static boolean isVisionAiEnabled() {
+        return getMmkv().decodeBool(KEY_VISION_AI_ENABLED, DEFAULT_VISION_AI_ENABLED);
+    }
+    
+    /**
+     * 设置外挂AI开关
+     * @param enabled 是否启用外挂AI
+     */
+    public static void setVisionAiEnabled(boolean enabled) {
+        getMmkv().encode(KEY_VISION_AI_ENABLED, enabled);
+    }
+    
+    /**
+     * 获取外挂AI的API URL
+     * @return API URL
+     */
+    public static String getVisionApiUrl() {
+        return getMmkv().decodeString(KEY_VISION_API_URL, "");
+    }
+    
+    /**
+     * 设置外挂AI的API URL
+     * @param url API URL
+     */
+    public static void setVisionApiUrl(String url) {
+        getMmkv().encode(KEY_VISION_API_URL, url);
+    }
+    
+    /**
+     * 获取外挂AI的API Key
+     * @return API Key
+     */
+    public static String getVisionApiKey() {
+        return getMmkv().decodeString(KEY_VISION_API_KEY, "");
+    }
+    
+    /**
+     * 设置外挂AI的API Key
+     * @param key API Key
+     */
+    public static void setVisionApiKey(String key) {
+        getMmkv().encode(KEY_VISION_API_KEY, key);
+    }
+    
+    /**
+     * 获取外挂AI的模型名称
+     * @return 模型名称
+     */
+    public static String getVisionAiModel() {
+        return getMmkv().decodeString(KEY_VISION_AI_MODEL, DEFAULT_VISION_AI_MODEL);
+    }
+    
+    /**
+     * 设置外挂AI的模型名称
+     * @param model 模型名称
+     */
+    public static void setVisionAiModel(String model) {
+        getMmkv().encode(KEY_VISION_AI_MODEL, model);
+    }
+    
+    /**
+     * 获取外挂AI的服务商
+     * @return 服务商标识
+     */
+    public static String getVisionAiProvider() {
+        return getMmkv().decodeString(KEY_VISION_AI_PROVIDER, DEFAULT_VISION_AI_PROVIDER);
+    }
+    
+    /**
+     * 设置外挂AI的服务商
+     * @param provider 服务商标识
+     */
+    public static void setVisionAiProvider(String provider) {
+        getMmkv().encode(KEY_VISION_AI_PROVIDER, provider);
+    }
+    
+    // 外挂AI服务商常量（用于Vision API）
+    public static final String VISION_PROVIDER_OPENAI = "openai";
+    public static final String VISION_PROVIDER_GOOGLE = "google";
+    public static final String VISION_PROVIDER_ANTHROPIC = "anthropic";
+    public static final String VISION_PROVIDER_KIMI = "kimi";
+    public static final String VISION_PROVIDER_GLM = "glm";
+    public static final String VISION_PROVIDER_DASHSCOPE = "dashscope";
+    public static final String VISION_PROVIDER_DOUBAO = "doubao";
+    public static final String VISION_PROVIDER_BAIDU = "baidu";
+    public static final String VISION_PROVIDER_CUSTOM = "custom";
+    
+    /**
+     * 根据外挂AI服务商获取默认API URL
+     * @param provider 服务商标识
+     * @return 对应的API端点URL，未知服务商返回空字符串
+     */
+    @NonNull
+    public static String getDefaultVisionApiUrl(String provider) {
+        if (provider == null) {
+            return "";
+        }
+        switch (provider) {
+            case VISION_PROVIDER_OPENAI:
+                return "https://api.openai.com/v1/chat/completions";
+            case VISION_PROVIDER_GOOGLE:
+                return "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
+            case VISION_PROVIDER_ANTHROPIC:
+                return "https://api.anthropic.com/v1/chat/completions";
+            case VISION_PROVIDER_KIMI:
+                return "https://api.moonshot.cn/v1/chat/completions";
+            case VISION_PROVIDER_GLM:
+                return "https://open.bigmodel.cn/api/paas/v4/chat/completions";
+            case VISION_PROVIDER_DASHSCOPE:
+                return "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
+            case VISION_PROVIDER_DOUBAO:
+                return "https://ark.cn-beijing.volces.com/api/v3/chat/completions";
+            case VISION_PROVIDER_BAIDU:
+                return "https://qianfan.baidubce.com/v2/chat/completions";
+            default:
+                return "";
+        }
+    }
+    
+    /**
+     * 获取外挂AI服务商显示名称
+     * @param provider 服务商标识
+     * @return 服务商的中文显示名称
+     */
+    @NonNull
+    public static String getVisionProviderDisplayName(String provider) {
+        if (provider == null) {
+            return "未知";
+        }
+        switch (provider) {
+            case VISION_PROVIDER_OPENAI:
+                return "OpenAI (GPT-4 Vision)";
+            case VISION_PROVIDER_GOOGLE:
+                return "Google (Gemini Vision)";
+            case VISION_PROVIDER_ANTHROPIC:
+                return "Anthropic (Claude Vision)";
+            case VISION_PROVIDER_KIMI:
+                return "月之暗面 (Kimi Vision)";
+            case VISION_PROVIDER_GLM:
+                return "智谱AI (GLM-4V)";
+            case VISION_PROVIDER_DASHSCOPE:
+                return "阿里云DashScope (通义千问VL)";
+            case VISION_PROVIDER_DOUBAO:
+                return "字节豆包 (Doubao Vision)";
+            case VISION_PROVIDER_BAIDU:
+                return "百度千帆 (文心视觉)";
+            case VISION_PROVIDER_CUSTOM:
+                return "自定义";
+            default:
+                return "未知";
+        }
+    }
+    
+    /**
+     * 检查外挂AI是否使用代理
+     * @return true 如果使用代理
+     */
+    public static boolean isVisionUseProxy() {
+        return getMmkv().decodeBool(KEY_VISION_USE_PROXY, DEFAULT_VISION_USE_PROXY);
+    }
+    
+    /**
+     * 设置外挂AI是否使用代理
+     * @param useProxy 是否使用代理
+     */
+    public static void setVisionUseProxy(boolean useProxy) {
+        getMmkv().encode(KEY_VISION_USE_PROXY, useProxy);
+    }
+    
+    /**
+     * 获取图片大小限制(KB)
+     * @return 图片大小限制
+     */
+    public static int getImageMaxSize() {
+        return getMmkv().decodeInt(KEY_IMAGE_MAX_SIZE, DEFAULT_IMAGE_MAX_SIZE);
+    }
+    
+    /**
+     * 设置图片大小限制(KB)
+     * @param maxSize 图片大小限制
+     */
+    public static void setImageMaxSize(int maxSize) {
+        getMmkv().encode(KEY_IMAGE_MAX_SIZE, maxSize);
+    }
+    
+    /**
+     * 获取图片描述最大长度
+     * @return 描述最大长度
+     */
+    public static int getImageDescriptionMaxLength() {
+        return getMmkv().decodeInt(KEY_IMAGE_DESCRIPTION_MAX_LENGTH, DEFAULT_IMAGE_DESCRIPTION_MAX_LENGTH);
+    }
+    
+    /**
+     * 设置图片描述最大长度
+     * @param maxLength 描述最大长度
+     */
+    public static void setImageDescriptionMaxLength(int maxLength) {
+        getMmkv().encode(KEY_IMAGE_DESCRIPTION_MAX_LENGTH, maxLength);
+    }
+    
+    /**
+     * 获取外挂AI超时时间(秒)
+     * @return 超时时间
+     */
+    public static int getVisionTimeout() {
+        return getMmkv().decodeInt(KEY_VISION_TIMEOUT, DEFAULT_VISION_TIMEOUT);
+    }
+    
+    /**
+     * 设置外挂AI超时时间(秒)
+     * @param timeout 超时时间
+     */
+    public static void setVisionTimeout(int timeout) {
+        getMmkv().encode(KEY_VISION_TIMEOUT, timeout);
+    }
+    
+    /**
+     * 检查图片识别配置是否有效
+     * @return true 如果配置完整且有效
+     */
+    public static boolean isImageRecognitionConfigValid() {
+        // 如果图片识别未启用,返回false
+        if (!isImageRecognitionEnabled()) {
+            return false;
+        }
+        
+        // 如果启用了外挂AI,检查外挂AI配置
+        if (isVisionAiEnabled()) {
+            String apiUrl = getVisionApiUrl();
+            String apiKey = getVisionApiKey();
+            String model = getVisionAiModel();
+            
+            // API URL和模型名称必须非空
+            if (apiUrl == null || apiUrl.trim().isEmpty()) {
+                return false;
+            }
+            if (model == null || model.trim().isEmpty()) {
+                return false;
+            }
+            // API Key可以为空(某些服务不需要)
+        }
+        // 如果未启用外挂AI,则使用主AI配置,无需额外验证
+        
+        return true;
+    }
+    
+    /**
+     * 检查上下文图片识别是否启用
+     * 启用后会识别上下文中所有消息的图片，而不仅仅是当前消息
+     * @return true 如果启用上下文图片识别
+     */
+    public static boolean isContextImageRecognitionEnabled() {
+        return getMmkv().decodeBool(KEY_CONTEXT_IMAGE_RECOGNITION_ENABLED, DEFAULT_CONTEXT_IMAGE_RECOGNITION_ENABLED);
+    }
+    
+    /**
+     * 设置上下文图片识别开关
+     * @param enabled 是否启用上下文图片识别
+     */
+    public static void setContextImageRecognitionEnabled(boolean enabled) {
+        getMmkv().encode(KEY_CONTEXT_IMAGE_RECOGNITION_ENABLED, enabled);
+    }
+    
+    /**
+     * 获取外挂AI请求速率 (QPS)
+     * @return 每秒最大请求数
+     */
+    public static float getVisionAiQps() {
+        return getMmkv().decodeFloat(KEY_VISION_AI_QPS, DEFAULT_VISION_AI_QPS);
+    }
+    
+    /**
+     * 设置外挂AI请求速率 (QPS)
+     * @param qps 每秒最大请求数
+     */
+    public static void setVisionAiQps(float qps) {
+        getMmkv().encode(KEY_VISION_AI_QPS, qps);
     }
 }

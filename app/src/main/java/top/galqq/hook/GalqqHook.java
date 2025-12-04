@@ -106,6 +106,16 @@ public class GalqqHook implements IXposedHookLoadPackage, IXposedHookZygoteInit 
                         errorLog(TAG + ": AIOElementType 分析失败: " + t.getMessage());
                         errorLog(t);
                     }
+                    
+                    // 初始化 RkeyHook（用于获取图片下载的rkey）
+                    errorLog(TAG + ": 正在初始化 RkeyHook...");
+                    try {
+                        RkeyHook.init(app.getClassLoader());
+                        errorLog(TAG + ": RkeyHook 初始化完成");
+                    } catch (Throwable t) {
+                        errorLog(TAG + ": RkeyHook 初始化失败: " + t.getMessage());
+                        errorLog(t);
+                    }
                 }
             });
 

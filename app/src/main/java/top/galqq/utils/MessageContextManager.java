@@ -42,22 +42,63 @@ public class MessageContextManager {
      */
     public static class ChatMessage {
         public final String senderName;   // 发送人名称
-        public final String content;       // 消息内容
+        public final String content;       // 消息内容（可能包含图片描述占位符）
         public final boolean isSelf;       // 是否是自己发送的
         public final long timestamp;       // 时间戳
-        public final String msgId;         // 消息ID（用于去重）
+        public final String msgId;         // 消息ID（用于去重和图片缓存）
+        public final int imageCount;       // 图片数量（用于上下文图片识别）
+        public final boolean hasImages;    // 是否包含图片
         
         public ChatMessage(String senderName, String content, boolean isSelf, long timestamp, String msgId) {
+            this(senderName, content, isSelf, timestamp, msgId, 0);
+        }
+        
+        public ChatMessage(String senderName, String content, boolean isSelf, long timestamp, String msgId, int imageCount) {
             this.senderName = senderName;
             this.content = content;
             this.isSelf = isSelf;
             this.timestamp = timestamp;
             this.msgId = msgId;
+            this.imageCount = imageCount;
+            this.hasImages = imageCount > 0;
         }
         
         @Override
         public String toString() {
             return senderName + ": " + content;
+        }
+        
+        /**
+         * 获取带图片描述的内容（从缓存获取）
+         * @param conversationId 会话ID
+         * @return 包含图片描述的内容
+         */
+        public String getContentWithImageDescriptions(String conversationId) {
+            if (!hasImages || imageCount == 0) {
+                return content;
+            }
+            
+            // 检查是否有缓存的图片描述
+            StringBuilder sb = new StringBuilder();
+            sb.append(content);
+            
+            boolean hasCachedDescriptions = false;
+            for (int i = 0; i < imageCount; i++) {
+                String cached = ImageDescriptionCache.get(conversationId, msgId, i);
+                if (cached != null) {
+                    if (!hasCachedDescriptions) {
+                        sb.append("\n[图片内容:");
+                        hasCachedDescriptions = true;
+                    }
+                    sb.append("\n  图").append(i + 1).append(": ").append(cached);
+                }
+            }
+            
+            if (hasCachedDescriptions) {
+                sb.append("]");
+            }
+            
+            return sb.toString();
         }
     }
     
@@ -117,6 +158,22 @@ public class MessageContextManager {
      */
     public static void addMessage(String conversationId, String senderName, String content, 
                                   boolean isSelf, String msgId, long msgTime) {
+        addMessage(conversationId, senderName, content, isSelf, msgId, msgTime, 0);
+    }
+    
+    /**
+     * 添加消息到缓存（带去重、时间戳和图片数量）
+     * 
+     * @param conversationId 会话ID（通常是对方的UIN或群ID）
+     * @param senderName 发送人名称
+     * @param content 消息内容
+     * @param isSelf 是否是自己发送的
+     * @param msgId 消息ID（用于去重）
+     * @param msgTime 消息时间戳（毫秒）
+     * @param imageCount 图片数量
+     */
+    public static void addMessage(String conversationId, String senderName, String content, 
+                                  boolean isSelf, String msgId, long msgTime, int imageCount) {
         // XposedBridge.log(TAG + ": 📥 准备添加消息到上下文");
         // XposedBridge.log(TAG + ":   conversationId=" + conversationId);
         // XposedBridge.log(TAG + ":   senderName=" + senderName);
@@ -163,7 +220,8 @@ public class MessageContextManager {
                 content,
                 isSelf,
                 timestamp,
-                msgId
+                msgId,
+                imageCount
             );
             
             context.addMessage(message);
