@@ -18,9 +18,14 @@ public class GalSettingsFragment extends PreferenceFragmentCompat {
      */
     private void updateProviderSummary(androidx.preference.ListPreference pref, String provider) {
         String displayName = ConfigManager.getProviderDisplayName(provider);
-        String apiUrl = ConfigManager.getDefaultApiUrl(provider);
-        if (apiUrl.isEmpty()) {
-            apiUrl = ConfigManager.getApiUrl();
+        // 始终显示当前实际使用的API URL，而不是默认URL
+        String apiUrl = ConfigManager.getApiUrl();
+        if (apiUrl == null || apiUrl.isEmpty()) {
+            // 如果当前URL为空，显示默认URL作为提示
+            apiUrl = ConfigManager.getDefaultApiUrl(provider);
+            if (apiUrl.isEmpty()) {
+                apiUrl = "未设置";
+            }
         }
         pref.setSummary(displayName + "\n" + apiUrl);
     }
@@ -143,11 +148,24 @@ public class GalSettingsFragment extends PreferenceFragmentCompat {
 
         // API URL
         EditTextPreference apiUrlPref = findPreference(ConfigManager.KEY_API_URL);
+        // 获取服务商Preference的引用，用于更新summary
+        final androidx.preference.ListPreference providerPrefForUrl = findPreference(ConfigManager.KEY_AI_PROVIDER);
         if (apiUrlPref != null) {
             apiUrlPref.setText(ConfigManager.getApiUrl());
             apiUrlPref.setOnPreferenceChangeListener((preference, newValue) -> {
-                ConfigManager.setApiUrl((String) newValue);
-                apiUrlPref.setText((String) newValue);
+                String url = (String) newValue;
+                ConfigManager.setApiUrl(url);
+                apiUrlPref.setText(url);
+                
+                // 如果当前是自定义服务商，同时保存到自定义URL
+                if (ConfigManager.PROVIDER_CUSTOM.equals(ConfigManager.getAiProvider())) {
+                    ConfigManager.setCustomApiUrl(url);
+                }
+                
+                // 更新服务商选项的summary显示（包含当前API URL）
+                if (providerPrefForUrl != null) {
+                    updateProviderSummary(providerPrefForUrl, ConfigManager.getAiProvider());
+                }
                 return true;
             });
         }
@@ -198,15 +216,37 @@ public class GalSettingsFragment extends PreferenceFragmentCompat {
             
             aiProviderPref.setOnPreferenceChangeListener((preference, newValue) -> {
                 String provider = (String) newValue;
+                String oldProvider = ConfigManager.getAiProvider();
+                
+                // 如果从自定义切换到其他服务商，先保存当前的自定义URL
+                if (ConfigManager.PROVIDER_CUSTOM.equals(oldProvider)) {
+                    String currentUrl = ConfigManager.getApiUrl();
+                    if (currentUrl != null && !currentUrl.isEmpty()) {
+                        ConfigManager.setCustomApiUrl(currentUrl);
+                    }
+                }
+                
                 ConfigManager.setAiProvider(provider);
                 
-                // 自动填充API URL
-                String defaultUrl = ConfigManager.getDefaultApiUrl(provider);
-                if (!defaultUrl.isEmpty()) {
-                    ConfigManager.setApiUrl(defaultUrl);
-                    // 更新API URL EditTextPreference的显示
-                    if (apiUrlPrefForProvider != null) {
-                        apiUrlPrefForProvider.setText(defaultUrl);
+                // 根据服务商类型设置API URL
+                if (ConfigManager.PROVIDER_CUSTOM.equals(provider)) {
+                    // 切换到自定义服务商，恢复之前保存的自定义URL
+                    String customUrl = ConfigManager.getCustomApiUrl();
+                    if (customUrl != null && !customUrl.isEmpty()) {
+                        ConfigManager.setApiUrl(customUrl);
+                        if (apiUrlPrefForProvider != null) {
+                            apiUrlPrefForProvider.setText(customUrl);
+                        }
+                    }
+                    // 如果没有保存过自定义URL，保持当前URL不变
+                } else {
+                    // 切换到预设服务商，使用默认URL
+                    String defaultUrl = ConfigManager.getDefaultApiUrl(provider);
+                    if (!defaultUrl.isEmpty()) {
+                        ConfigManager.setApiUrl(defaultUrl);
+                        if (apiUrlPrefForProvider != null) {
+                            apiUrlPrefForProvider.setText(defaultUrl);
+                        }
                     }
                 }
                 
@@ -423,6 +463,18 @@ public class GalSettingsFragment extends PreferenceFragmentCompat {
                 } catch (Throwable t) {
                     // 忽略错误（可能在非 Xposed 环境下运行）
                 }
+                return true;
+            });
+        }
+        
+        // AI Include Affinity (AI请求携带好感度)
+        Preference aiIncludeAffinitySwitch = findPreference(ConfigManager.KEY_AI_INCLUDE_AFFINITY);
+        if (aiIncludeAffinitySwitch != null) {
+            if (aiIncludeAffinitySwitch instanceof androidx.preference.TwoStatePreference) {
+                ((androidx.preference.TwoStatePreference) aiIncludeAffinitySwitch).setChecked(ConfigManager.isAiIncludeAffinity());
+            }
+            aiIncludeAffinitySwitch.setOnPreferenceChangeListener((preference, newValue) -> {
+                ConfigManager.setAiIncludeAffinity((Boolean) newValue);
                 return true;
             });
         }
@@ -1050,6 +1102,120 @@ public class GalSettingsFragment extends PreferenceFragmentCompat {
                 return false;
             });
         }
+        
+        // ========== 按钮样式设置 ==========
+        
+        // 填充颜色
+        Preference fillColorPref = findPreference(ConfigManager.KEY_BUTTON_FILL_COLOR);
+        if (fillColorPref != null) {
+            updateColorPreferenceSummary(fillColorPref, ConfigManager.getButtonFillColor());
+            fillColorPref.setOnPreferenceClickListener(preference -> {
+                showColorPickerDialog(
+                    getString(R.string.color_picker_fill_title),
+                    ConfigManager.getButtonFillColor(),
+                    color -> {
+                        ConfigManager.setButtonFillColor(color);
+                        updateColorPreferenceSummary(fillColorPref, color);
+                    }
+                );
+                return true;
+            });
+        }
+        
+        // 边框颜色
+        Preference borderColorPref = findPreference(ConfigManager.KEY_BUTTON_BORDER_COLOR);
+        if (borderColorPref != null) {
+            updateColorPreferenceSummary(borderColorPref, ConfigManager.getButtonBorderColor());
+            borderColorPref.setOnPreferenceClickListener(preference -> {
+                showColorPickerDialog(
+                    getString(R.string.color_picker_border_title),
+                    ConfigManager.getButtonBorderColor(),
+                    color -> {
+                        ConfigManager.setButtonBorderColor(color);
+                        updateColorPreferenceSummary(borderColorPref, color);
+                    }
+                );
+                return true;
+            });
+        }
+        
+        // 边框宽度
+        EditTextPreference borderWidthPref = findPreference(ConfigManager.KEY_BUTTON_BORDER_WIDTH);
+        if (borderWidthPref != null) {
+            borderWidthPref.setText(String.valueOf(ConfigManager.getButtonBorderWidth()));
+            borderWidthPref.setSummary("当前: " + ConfigManager.getButtonBorderWidth() + " dp");
+            borderWidthPref.setOnPreferenceChangeListener((preference, newValue) -> {
+                try {
+                    int width = Integer.parseInt((String) newValue);
+                    if (width >= 0 && width <= 10) {
+                        ConfigManager.setButtonBorderWidth(width);
+                        borderWidthPref.setText((String) newValue);
+                        borderWidthPref.setSummary("当前: " + width + " dp");
+                        return true;
+                    } else {
+                        android.widget.Toast.makeText(requireContext(), "边框宽度范围: 0-10 dp", android.widget.Toast.LENGTH_SHORT).show();
+                    }
+                } catch (Exception e) {
+                    android.widget.Toast.makeText(requireContext(), "请输入有效的数字", android.widget.Toast.LENGTH_SHORT).show();
+                }
+                return false;
+            });
+        }
+        
+        // 字体颜色
+        Preference textColorPref = findPreference(ConfigManager.KEY_BUTTON_TEXT_COLOR);
+        if (textColorPref != null) {
+            updateColorPreferenceSummary(textColorPref, ConfigManager.getButtonTextColor());
+            textColorPref.setOnPreferenceClickListener(preference -> {
+                showColorPickerDialog(
+                    getString(R.string.color_picker_text_title),
+                    ConfigManager.getButtonTextColor(),
+                    color -> {
+                        ConfigManager.setButtonTextColor(color);
+                        updateColorPreferenceSummary(textColorPref, color);
+                    }
+                );
+                return true;
+            });
+        }
+        
+        // 重置按钮样式
+        Preference resetButtonStylePref = findPreference("gal_reset_button_style");
+        if (resetButtonStylePref != null) {
+            resetButtonStylePref.setOnPreferenceClickListener(preference -> {
+                showResetButtonStyleDialog();
+                return true;
+            });
+        }
+        
+        // ========== 配置管理 ==========
+        
+        // 导出配置
+        Preference exportConfigPref = findPreference("gal_export_config");
+        if (exportConfigPref != null) {
+            exportConfigPref.setOnPreferenceClickListener(preference -> {
+                showExportConfigDialog();
+                return true;
+            });
+        }
+        
+        // 导入配置
+        Preference importConfigPref = findPreference("gal_import_config");
+        if (importConfigPref != null) {
+            importConfigPref.setOnPreferenceClickListener(preference -> {
+                openImportFilePicker();
+                return true;
+            });
+        }
+        
+        // 重置配置
+        Preference resetConfigPref = findPreference("gal_reset_config");
+        if (resetConfigPref != null) {
+            resetConfigPref.setOnPreferenceClickListener(preference -> {
+                showResetConfigDialog();
+                return true;
+            });
+        }
     }
     
     /**
@@ -1241,5 +1407,266 @@ public class GalSettingsFragment extends PreferenceFragmentCompat {
                 imm.showSoftInput(input, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
             }
         }, 200);
+    }
+    
+    // ========== 配置管理相关方法 ==========
+    
+    // 文件选择请求码
+    private static final int REQUEST_EXPORT_CONFIG = 1001;
+    private static final int REQUEST_IMPORT_CONFIG = 1002;
+    
+    // 临时保存导出时是否包含敏感数据的选择
+    private boolean exportIncludeSensitive = false;
+    
+    /**
+     * 显示导出配置对话框
+     * 询问用户是否包含敏感数据
+     */
+    private void showExportConfigDialog() {
+        android.app.Activity activity = getActivity();
+        if (activity == null || !isAdded()) return;
+        
+        new android.app.AlertDialog.Builder(activity)
+            .setTitle("导出配置")
+            .setMessage("是否包含敏感数据（API Key、代理密码等）？\n\n" +
+                       "• 包含敏感数据：完整备份，可直接恢复\n" +
+                       "• 不包含敏感数据：安全分享，需手动填写密钥")
+            .setPositiveButton("包含敏感数据", (dialog, which) -> {
+                exportIncludeSensitive = true;
+                openExportFilePicker();
+            })
+            .setNegativeButton("不包含", (dialog, which) -> {
+                exportIncludeSensitive = false;
+                openExportFilePicker();
+            })
+            .setNeutralButton("取消", null)
+            .show();
+    }
+    
+    /**
+     * 打开文件选择器保存导出文件
+     */
+    private void openExportFilePicker() {
+        try {
+            Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("application/json");
+            intent.putExtra(Intent.EXTRA_TITLE, top.galqq.config.ConfigExporter.getSuggestedFileName());
+            startActivityForResult(intent, REQUEST_EXPORT_CONFIG);
+        } catch (Exception e) {
+            android.widget.Toast.makeText(requireContext(), "无法打开文件选择器: " + e.getMessage(), android.widget.Toast.LENGTH_SHORT).show();
+        }
+    }
+    
+    /**
+     * 打开文件选择器选择导入文件
+     */
+    private void openImportFilePicker() {
+        try {
+            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("application/json");
+            startActivityForResult(intent, REQUEST_IMPORT_CONFIG);
+        } catch (Exception e) {
+            android.widget.Toast.makeText(requireContext(), "无法打开文件选择器: " + e.getMessage(), android.widget.Toast.LENGTH_SHORT).show();
+        }
+    }
+    
+    /**
+     * 显示重置配置确认对话框
+     */
+    private void showResetConfigDialog() {
+        android.app.Activity activity = getActivity();
+        if (activity == null || !isAdded()) return;
+        
+        new android.app.AlertDialog.Builder(activity)
+            .setTitle("重置配置")
+            .setMessage("确定要清除所有配置吗？\n\n此操作将恢复所有设置为默认值，且无法撤销。")
+            .setPositiveButton("确定重置", (dialog, which) -> {
+                ConfigManager.clear();
+                android.widget.Toast.makeText(activity, "配置已重置", android.widget.Toast.LENGTH_SHORT).show();
+                // 刷新界面
+                if (getActivity() != null) {
+                    getActivity().recreate();
+                }
+            })
+            .setNegativeButton("取消", null)
+            .show();
+    }
+    
+    @Override
+    public void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        
+        if (resultCode != android.app.Activity.RESULT_OK || data == null) {
+            return;
+        }
+        
+        android.net.Uri uri = data.getData();
+        if (uri == null) {
+            return;
+        }
+        
+        if (requestCode == REQUEST_EXPORT_CONFIG) {
+            // 执行导出
+            boolean success = top.galqq.config.ConfigExporter.exportToFile(requireContext(), uri, exportIncludeSensitive);
+            if (success) {
+                android.widget.Toast.makeText(requireContext(), "✅ 配置导出成功", android.widget.Toast.LENGTH_LONG).show();
+            } else {
+                android.widget.Toast.makeText(requireContext(), "❌ 配置导出失败", android.widget.Toast.LENGTH_LONG).show();
+            }
+        } else if (requestCode == REQUEST_IMPORT_CONFIG) {
+            // 执行导入
+            handleImportConfig(uri);
+        }
+    }
+    
+    /**
+     * 处理配置导入
+     */
+    private void handleImportConfig(android.net.Uri uri) {
+        android.app.Activity activity = getActivity();
+        if (activity == null || !isAdded()) return;
+        
+        // 解析配置文件
+        top.galqq.config.ConfigImporter.ImportResult result = 
+            top.galqq.config.ConfigImporter.importFromFile(requireContext(), uri);
+        
+        if (!result.success) {
+            android.widget.Toast.makeText(activity, "❌ " + result.errorMessage, android.widget.Toast.LENGTH_LONG).show();
+            return;
+        }
+        
+        // 显示导入预览对话框
+        showImportPreviewDialog(result);
+    }
+    
+    /**
+     * 显示导入预览对话框（支持分类选择）
+     */
+    private void showImportPreviewDialog(top.galqq.config.ConfigImporter.ImportResult result) {
+        android.app.Activity activity = getActivity();
+        if (activity == null || !isAdded()) return;
+        
+        // 使用 ImportPreviewDialog 显示带分类选择的预览
+        ImportPreviewDialog dialog = ImportPreviewDialog.newInstance(result, new ImportPreviewDialog.ImportCallback() {
+            @Override
+            public void onConfirm(java.util.Set<String> selectedCategories) {
+                if (selectedCategories == null || selectedCategories.isEmpty()) {
+                    android.widget.Toast.makeText(activity, "请至少选择一个分类", android.widget.Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                
+                // 执行导入（只导入选中的分类）
+                boolean success = top.galqq.config.ConfigImporter.importConfig(result, selectedCategories);
+                if (success) {
+                    android.widget.Toast.makeText(activity, "✅ 配置导入成功", android.widget.Toast.LENGTH_LONG).show();
+                    // 刷新界面
+                    if (getActivity() != null) {
+                        getActivity().recreate();
+                    }
+                } else {
+                    android.widget.Toast.makeText(activity, "❌ 配置导入失败，已回滚", android.widget.Toast.LENGTH_LONG).show();
+                }
+            }
+            
+            @Override
+            public void onCancel() {
+                // 用户取消，不做任何操作
+            }
+        });
+        
+        dialog.show(getParentFragmentManager(), "ImportPreviewDialog");
+    }
+    
+    // ========== 按钮样式相关方法 ==========
+    
+    /**
+     * 更新颜色选项的 summary 显示
+     */
+    private void updateColorPreferenceSummary(Preference pref, int color) {
+        String hex = String.format("#%08X", color);
+        pref.setSummary("当前: " + hex);
+    }
+    
+    /**
+     * 显示颜色选择器对话框
+     */
+    private void showColorPickerDialog(String title, int initialColor, ColorSelectedCallback callback) {
+        android.app.Activity activity = getActivity();
+        if (activity == null || !isAdded()) return;
+        
+        ColorPickerDialog dialog = ColorPickerDialog.newInstance(
+            activity,
+            title,
+            initialColor,
+            new ColorPickerDialog.OnColorSelectedListener() {
+                @Override
+                public void onColorSelected(int color) {
+                    callback.onColorSelected(color);
+                }
+                
+                @Override
+                public void onCancel() {
+                    // 用户取消，不做任何操作
+                }
+            }
+        );
+        dialog.show();
+    }
+    
+    /**
+     * 颜色选择回调接口
+     */
+    private interface ColorSelectedCallback {
+        void onColorSelected(int color);
+    }
+    
+    /**
+     * 显示重置按钮样式确认对话框
+     */
+    private void showResetButtonStyleDialog() {
+        android.app.Activity activity = getActivity();
+        if (activity == null || !isAdded()) return;
+        
+        new android.app.AlertDialog.Builder(activity)
+            .setTitle(R.string.reset_button_style_dialog_title)
+            .setMessage(R.string.reset_button_style_dialog_message)
+            .setPositiveButton("确定", (dialog, which) -> {
+                // 重置按钮样式
+                top.galqq.utils.ButtonStyleManager.resetToDefaults();
+                android.widget.Toast.makeText(activity, R.string.reset_button_style_success, android.widget.Toast.LENGTH_SHORT).show();
+                
+                // 刷新界面显示
+                refreshButtonStylePreferences();
+            })
+            .setNegativeButton("取消", null)
+            .show();
+    }
+    
+    /**
+     * 刷新按钮样式相关的 Preference 显示
+     */
+    private void refreshButtonStylePreferences() {
+        Preference fillColorPref = findPreference(ConfigManager.KEY_BUTTON_FILL_COLOR);
+        if (fillColorPref != null) {
+            updateColorPreferenceSummary(fillColorPref, ConfigManager.getButtonFillColor());
+        }
+        
+        Preference borderColorPref = findPreference(ConfigManager.KEY_BUTTON_BORDER_COLOR);
+        if (borderColorPref != null) {
+            updateColorPreferenceSummary(borderColorPref, ConfigManager.getButtonBorderColor());
+        }
+        
+        EditTextPreference borderWidthPref = findPreference(ConfigManager.KEY_BUTTON_BORDER_WIDTH);
+        if (borderWidthPref != null) {
+            borderWidthPref.setText(String.valueOf(ConfigManager.getButtonBorderWidth()));
+            borderWidthPref.setSummary("当前: " + ConfigManager.getButtonBorderWidth() + " dp");
+        }
+        
+        Preference textColorPref = findPreference(ConfigManager.KEY_BUTTON_TEXT_COLOR);
+        if (textColorPref != null) {
+            updateColorPreferenceSummary(textColorPref, ConfigManager.getButtonTextColor());
+        }
     }
 }

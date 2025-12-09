@@ -373,18 +373,18 @@ public class AiRateLimitedQueue {
                                          request.currentSenderName, request.currentTimestamp,
                                          request.contextMessages, request.customSystemPrompt,
                                          request.imageElements, request.conversationId, request.msgId,
-                                         syncCallback);
+                                         request.senderQQ, syncCallback);
             } else if (request.customSystemPrompt != null && !request.customSystemPrompt.isEmpty()) {
-                // 使用自定义提示词（静默模式）
+                // 使用自定义提示词（静默模式，传递senderQQ用于好感度）
                 HttpAiClient.fetchOptionsWithPromptSilent(request.context, request.msgContent,
                                          request.currentSenderName, request.currentTimestamp,
                                          request.contextMessages, request.customSystemPrompt,
-                                         syncCallback);
+                                         request.senderQQ, syncCallback);
             } else {
-                // 使用默认提示词（静默模式）
+                // 使用默认提示词（静默模式，传递senderQQ用于好感度）
                 HttpAiClient.fetchOptionsSilent(request.context, request.msgContent,
                                          request.currentSenderName, request.currentTimestamp,
-                                         request.contextMessages, syncCallback);
+                                         request.contextMessages, request.senderQQ, syncCallback);
             }
             
             // 等待结果（最多60秒，图片处理可能需要更长时间）

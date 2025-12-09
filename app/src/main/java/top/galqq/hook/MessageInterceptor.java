@@ -677,7 +677,8 @@ public class MessageInterceptor {
             tv.setPadding(dp2px(context, 12), dp2px(context, 8), dp2px(context, 12), dp2px(context, 8));
             // 使用带按压状态的背景，支持视觉反馈
             tv.setBackground(getSelectableRoundedBackground(Color.parseColor("#F2F2F2"), dp2px(context, 12)));
-            tv.setTextColor(Color.BLACK);
+            // 使用 ButtonStyleManager 获取自定义字体颜色
+            tv.setTextColor(top.galqq.utils.ButtonStyleManager.getTextColor());
             // 启用点击和焦点，确保按压状态生效
             tv.setClickable(true);
             tv.setFocusable(true);
@@ -1678,7 +1679,8 @@ public class MessageInterceptor {
                     
                     // 【上下文图片识别】传递图片数量，用于后续识别上下文中的图片
                     int imageCount = (imageElements != null) ? imageElements.size() : 0;
-                    MessageContextManager.addMessage(peerUin, senderName, msgContent, isSelf, msgId, msgTime, imageCount);
+                    // 传递senderUin用于好感度查询
+                    MessageContextManager.addMessage(peerUin, senderName, senderUin, msgContent, isSelf, msgId, msgTime, imageCount);
                     
                     // 【上下文图片识别】缓存图片元素，以便后续识别
                     if (imageElements != null && !imageElements.isEmpty() && peerUin != null && msgId != null) {
@@ -2165,10 +2167,9 @@ public class MessageInterceptor {
         // 减小Padding，使其更紧凑
         button.setPadding(dp2px(context, 8), dp2px(context, 4), dp2px(context, 8), dp2px(context, 4));
         
-        // 样式优化：模仿加载中，使用极淡背景或无背景
-        // 这里使用一个非常淡的灰色背景，带圆角，类似Tag
-        button.setBackground(getRoundedBackground(Color.parseColor("#F5F5F5"), dp2px(context, 10)));
-        button.setTextColor(Color.parseColor("#333333")); // 深灰色，比黑色淡一点
+        // 样式优化：使用 ButtonStyleManager 获取自定义样式
+        button.setBackground(getSelectableRoundedBackground(Color.parseColor("#F5F5F5"), dp2px(context, 10)));
+        button.setTextColor(top.galqq.utils.ButtonStyleManager.getTextColor()); // 使用自定义字体颜色
         button.setGravity(Gravity.CENTER);
         
         button.setOnClickListener(v -> {
@@ -2305,7 +2306,7 @@ public class MessageInterceptor {
         btn.setTextSize(12);
         btn.setPadding(dp2px(context, 10), dp2px(context, 6), dp2px(context, 10), dp2px(context, 6));
         btn.setBackground(getSelectableRoundedBackground(Color.parseColor("#F5F5F5"), dp2px(context, 12)));
-        btn.setTextColor(Color.parseColor("#666666"));
+        btn.setTextColor(top.galqq.utils.ButtonStyleManager.getTextColor()); // 使用自定义字体颜色
         btn.setClickable(true);
         btn.setFocusable(true);
         
@@ -2345,7 +2346,7 @@ public class MessageInterceptor {
         btn.setTextSize(12);
         btn.setPadding(dp2px(context, 10), dp2px(context, 6), dp2px(context, 10), dp2px(context, 6));
         btn.setBackground(getSelectableRoundedBackground(Color.parseColor("#F5F5F5"), dp2px(context, 12)));
-        btn.setTextColor(Color.parseColor("#666666"));
+        btn.setTextColor(top.galqq.utils.ButtonStyleManager.getTextColor()); // 使用自定义字体颜色
         btn.setClickable(true);
         btn.setFocusable(true);
         
@@ -2410,8 +2411,8 @@ public class MessageInterceptor {
         button.setText("展开选项");
         button.setTextSize(12);
         button.setPadding(dp2px(context, 8), dp2px(context, 4), dp2px(context, 8), dp2px(context, 4));
-        button.setBackground(getRoundedBackground(Color.parseColor("#F5F5F5"), dp2px(context, 10)));
-        button.setTextColor(Color.parseColor("#666666"));
+        button.setBackground(getSelectableRoundedBackground(Color.parseColor("#F5F5F5"), dp2px(context, 10)));
+        button.setTextColor(top.galqq.utils.ButtonStyleManager.getTextColor()); // 使用自定义字体颜色
         button.setGravity(Gravity.CENTER);
         
         button.setOnClickListener(v -> {
@@ -2562,7 +2563,8 @@ public class MessageInterceptor {
             tv.setTextSize(13);
             tv.setPadding(dp2px(context, 12), dp2px(context, 8), dp2px(context, 12), dp2px(context, 8));
             tv.setBackground(getSelectableRoundedBackground(Color.parseColor("#F2F2F2"), dp2px(context, 12)));
-            tv.setTextColor(Color.BLACK);
+            // 使用 ButtonStyleManager 获取自定义字体颜色
+            tv.setTextColor(top.galqq.utils.ButtonStyleManager.getTextColor());
             tv.setClickable(true);
             tv.setFocusable(true);
             
@@ -2654,24 +2656,43 @@ public class MessageInterceptor {
     }
 
     /**
-     * 创建带按压状态的圆角背景
-     * 普通状态使用原始颜色，按压状态使用加深的颜色
-     * @param color 背景颜色
+     * 创建带按压状态的圆角背景（使用自定义样式）
+     * 普通状态使用配置的填充颜色，按压状态使用加深的颜色
+     * 支持自定义边框颜色和宽度
+     * @param color 背景颜色（已弃用，使用 ButtonStyleManager 配置）
      * @param radiusPx 圆角半径（像素）
      * @return StateListDrawable
      */
     private static android.graphics.drawable.Drawable getSelectableRoundedBackground(int color, int radiusPx) {
+        // 从 ButtonStyleManager 获取自定义样式
+        int fillColor = top.galqq.utils.ButtonStyleManager.getFillColor();
+        int borderColor = top.galqq.utils.ButtonStyleManager.getBorderColor();
+        int borderWidth = top.galqq.utils.ButtonStyleManager.getBorderWidth();
+        
         // 创建普通状态背景
         android.graphics.drawable.GradientDrawable normalDrawable = new android.graphics.drawable.GradientDrawable();
         normalDrawable.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
-        normalDrawable.setColor(color);
+        normalDrawable.setColor(fillColor);
         normalDrawable.setCornerRadius(radiusPx);
+        
+        // 设置边框（如果边框宽度大于0）
+        if (borderWidth > 0) {
+            // 将 dp 转换为 px（简单估算，假设 density 约为 2-3）
+            int borderWidthPx = (int) (borderWidth * 2.5f);
+            normalDrawable.setStroke(borderWidthPx, borderColor);
+        }
         
         // 创建按压状态背景（颜色加深 10%）
         android.graphics.drawable.GradientDrawable pressedDrawable = new android.graphics.drawable.GradientDrawable();
         pressedDrawable.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
-        pressedDrawable.setColor(darkenColor(color, 0.1f));
+        pressedDrawable.setColor(darkenColor(fillColor, 0.1f));
         pressedDrawable.setCornerRadius(radiusPx);
+        
+        // 按压状态也设置边框
+        if (borderWidth > 0) {
+            int borderWidthPx = (int) (borderWidth * 2.5f);
+            pressedDrawable.setStroke(borderWidthPx, darkenColor(borderColor, 0.1f));
+        }
         
         // 创建 StateListDrawable
         android.graphics.drawable.StateListDrawable stateListDrawable = new android.graphics.drawable.StateListDrawable();

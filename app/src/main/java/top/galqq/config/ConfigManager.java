@@ -5,12 +5,228 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import com.tencent.mmkv.MMKV;
 import java.io.File;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 
 public class ConfigManager {
 
     private static final String MMKV_ID = "GalQQ";
     private static MMKV sMmkv;
     private static boolean sInitialized = false;
+    
+    // ========== 配置分类常量 (用于导出导入功能) ==========
+    public static final String CATEGORY_AI_SETTINGS = "ai_settings";
+    public static final String CATEGORY_PROXY_SETTINGS = "proxy_settings";
+    public static final String CATEGORY_FILTER_SETTINGS = "filter_settings";
+    public static final String CATEGORY_IMAGE_RECOGNITION = "image_recognition";
+    public static final String CATEGORY_DISPLAY_SETTINGS = "display_settings";
+    public static final String CATEGORY_BUTTON_STYLE = "button_style";
+    public static final String CATEGORY_PROMPTS = "prompts";
+    
+    /**
+     * 所有配置分类列表
+     */
+    public static final String[] ALL_CATEGORIES = {
+        CATEGORY_AI_SETTINGS,
+        CATEGORY_PROXY_SETTINGS,
+        CATEGORY_FILTER_SETTINGS,
+        CATEGORY_IMAGE_RECOGNITION,
+        CATEGORY_DISPLAY_SETTINGS,
+        CATEGORY_BUTTON_STYLE,
+        CATEGORY_PROMPTS
+    };
+    
+    /**
+     * 敏感配置键列表 - 这些配置在导出时可选择排除
+     */
+    public static final Set<String> SENSITIVE_KEYS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+        "gal_api_key",           // AI API 密钥
+        "gal_proxy_password",    // 代理密码
+        "gal_vision_api_key"     // 外挂AI API 密钥
+    )));
+    
+    /**
+     * 配置键到分类的映射表
+     * 用于将配置项按分类组织
+     */
+    public static final Map<String, String> KEY_TO_CATEGORY;
+    
+    static {
+        Map<String, String> map = new HashMap<>();
+        
+        // AI 设置
+        map.put("gal_enabled", CATEGORY_AI_SETTINGS);
+        map.put("gal_ai_enabled", CATEGORY_AI_SETTINGS);
+        map.put("gal_api_url", CATEGORY_AI_SETTINGS);
+        map.put("gal_custom_api_url", CATEGORY_AI_SETTINGS);
+        map.put("gal_api_key", CATEGORY_AI_SETTINGS);
+        map.put("gal_ai_model", CATEGORY_AI_SETTINGS);
+        map.put("gal_ai_provider", CATEGORY_AI_SETTINGS);
+        map.put("gal_ai_temperature", CATEGORY_AI_SETTINGS);
+        map.put("gal_ai_max_tokens", CATEGORY_AI_SETTINGS);
+        map.put("gal_ai_reasoning_effort", CATEGORY_AI_SETTINGS);
+        map.put("gal_ai_qps", CATEGORY_AI_SETTINGS);
+        map.put("gal_ai_timeout", CATEGORY_AI_SETTINGS);
+        map.put("gal_context_enabled", CATEGORY_AI_SETTINGS);
+        map.put("gal_context_message_count", CATEGORY_AI_SETTINGS);
+        map.put("gal_history_threshold", CATEGORY_AI_SETTINGS);
+        
+        // 代理设置
+        map.put("gal_proxy_enabled", CATEGORY_PROXY_SETTINGS);
+        map.put("gal_proxy_type", CATEGORY_PROXY_SETTINGS);
+        map.put("gal_proxy_host", CATEGORY_PROXY_SETTINGS);
+        map.put("gal_proxy_port", CATEGORY_PROXY_SETTINGS);
+        map.put("gal_proxy_auth_enabled", CATEGORY_PROXY_SETTINGS);
+        map.put("gal_proxy_username", CATEGORY_PROXY_SETTINGS);
+        map.put("gal_proxy_password", CATEGORY_PROXY_SETTINGS);
+        
+        // 过滤设置
+        map.put("gal_filter_mode", CATEGORY_FILTER_SETTINGS);
+        map.put("gal_blacklist", CATEGORY_FILTER_SETTINGS);
+        map.put("gal_whitelist", CATEGORY_FILTER_SETTINGS);
+        map.put("gal_group_filter_mode", CATEGORY_FILTER_SETTINGS);
+        map.put("gal_group_blacklist", CATEGORY_FILTER_SETTINGS);
+        map.put("gal_group_whitelist", CATEGORY_FILTER_SETTINGS);
+        
+        // 图片识别设置
+        map.put("gal_image_recognition_enabled", CATEGORY_IMAGE_RECOGNITION);
+        map.put("gal_emoji_recognition_enabled", CATEGORY_IMAGE_RECOGNITION);
+        map.put("gal_vision_ai_enabled", CATEGORY_IMAGE_RECOGNITION);
+        map.put("gal_vision_api_url", CATEGORY_IMAGE_RECOGNITION);
+        map.put("gal_vision_api_key", CATEGORY_IMAGE_RECOGNITION);
+        map.put("gal_vision_ai_model", CATEGORY_IMAGE_RECOGNITION);
+        map.put("gal_vision_ai_provider", CATEGORY_IMAGE_RECOGNITION);
+        map.put("gal_vision_use_proxy", CATEGORY_IMAGE_RECOGNITION);
+        map.put("gal_vision_ai_qps", CATEGORY_IMAGE_RECOGNITION);
+        map.put("gal_image_max_size", CATEGORY_IMAGE_RECOGNITION);
+        map.put("gal_image_description_max_length", CATEGORY_IMAGE_RECOGNITION);
+        map.put("gal_vision_timeout", CATEGORY_IMAGE_RECOGNITION);
+        map.put("gal_context_image_recognition_enabled", CATEGORY_IMAGE_RECOGNITION);
+        
+        // 显示设置
+        map.put("gal_auto_show_options", CATEGORY_DISPLAY_SETTINGS);
+        map.put("gal_disable_group_options", CATEGORY_DISPLAY_SETTINGS);
+        map.put("gal_affinity_enabled", CATEGORY_DISPLAY_SETTINGS);
+        map.put("gal_affinity_model", CATEGORY_DISPLAY_SETTINGS);
+        map.put("gal_ai_include_affinity", CATEGORY_DISPLAY_SETTINGS);
+        map.put("gal_verbose_log", CATEGORY_DISPLAY_SETTINGS);
+        map.put("gal_debug_hook_log", CATEGORY_DISPLAY_SETTINGS);
+        
+        // 按钮样式设置
+        map.put("gal_button_fill_color", CATEGORY_BUTTON_STYLE);
+        map.put("gal_button_border_color", CATEGORY_BUTTON_STYLE);
+        map.put("gal_button_border_width", CATEGORY_BUTTON_STYLE);
+        map.put("gal_button_text_color", CATEGORY_BUTTON_STYLE);
+        
+        // 提示词设置
+        map.put("gal_prompt_list", CATEGORY_PROMPTS);
+        map.put("gal_current_prompt_index", CATEGORY_PROMPTS);
+        map.put("gal_sys_prompt", CATEGORY_PROMPTS);
+        
+        KEY_TO_CATEGORY = Collections.unmodifiableMap(map);
+    }
+    
+    /**
+     * 获取分类的显示名称
+     * @param category 分类ID
+     * @return 分类的中文显示名称
+     */
+    @NonNull
+    public static String getCategoryDisplayName(String category) {
+        if (category == null) {
+            return "未知";
+        }
+        switch (category) {
+            case CATEGORY_AI_SETTINGS:
+                return "AI 设置";
+            case CATEGORY_PROXY_SETTINGS:
+                return "代理设置";
+            case CATEGORY_FILTER_SETTINGS:
+                return "过滤设置";
+            case CATEGORY_IMAGE_RECOGNITION:
+                return "图片识别";
+            case CATEGORY_DISPLAY_SETTINGS:
+                return "显示设置";
+            case CATEGORY_BUTTON_STYLE:
+                return "按钮样式";
+            case CATEGORY_PROMPTS:
+                return "提示词";
+            default:
+                return "未知";
+        }
+    }
+    
+    /**
+     * 获取分类的描述
+     * @param category 分类ID
+     * @return 分类的描述文本
+     */
+    @NonNull
+    public static String getCategoryDescription(String category) {
+        if (category == null) {
+            return "";
+        }
+        switch (category) {
+            case CATEGORY_AI_SETTINGS:
+                return "AI相关配置，包括API地址、模型、参数等";
+            case CATEGORY_PROXY_SETTINGS:
+                return "代理服务器配置";
+            case CATEGORY_FILTER_SETTINGS:
+                return "用户和群过滤配置";
+            case CATEGORY_IMAGE_RECOGNITION:
+                return "图片识别相关配置";
+            case CATEGORY_DISPLAY_SETTINGS:
+                return "显示和界面相关配置";
+            case CATEGORY_BUTTON_STYLE:
+                return "选项按钮的颜色和边框样式";
+            case CATEGORY_PROMPTS:
+                return "提示词列表配置";
+            default:
+                return "";
+        }
+    }
+    
+    /**
+     * 检查配置键是否为敏感数据
+     * @param key 配置键
+     * @return true 如果是敏感数据
+     */
+    public static boolean isSensitiveKey(String key) {
+        return key != null && SENSITIVE_KEYS.contains(key);
+    }
+    
+    /**
+     * 获取配置键所属的分类
+     * @param key 配置键
+     * @return 分类ID，如果未找到返回null
+     */
+    @Nullable
+    public static String getCategoryForKey(String key) {
+        return key != null ? KEY_TO_CATEGORY.get(key) : null;
+    }
+    
+    /**
+     * 获取指定分类下的所有配置键
+     * @param category 分类ID
+     * @return 该分类下的所有配置键集合
+     */
+    @NonNull
+    public static Set<String> getKeysForCategory(String category) {
+        Set<String> keys = new HashSet<>();
+        if (category == null) {
+            return keys;
+        }
+        for (Map.Entry<String, String> entry : KEY_TO_CATEGORY.entrySet()) {
+            if (category.equals(entry.getValue())) {
+                keys.add(entry.getKey());
+            }
+        }
+        return keys;
+    }
     
     // Keys
     public static final String KEY_ENABLED = "gal_enabled";
@@ -19,6 +235,7 @@ public class ConfigManager {
     public static final String KEY_PROMPT_LIST = "gal_prompt_list";
     public static final String KEY_CURRENT_PROMPT_INDEX = "gal_current_prompt_index";
     public static final String KEY_API_URL = "gal_api_url";
+    public static final String KEY_CUSTOM_API_URL = "gal_custom_api_url";  // 自定义服务商的API URL（独立保存）
     public static final String KEY_API_KEY = "gal_api_key";
     public static final String KEY_AI_MODEL = "gal_ai_model";
     public static final String KEY_AI_PROVIDER = "gal_ai_provider";
@@ -40,6 +257,19 @@ public class ConfigManager {
     // Affinity Keys (好感度功能)
     public static final String KEY_AFFINITY_ENABLED = "gal_affinity_enabled";
     public static final String KEY_AFFINITY_MODEL = "gal_affinity_model";
+    public static final String KEY_AI_INCLUDE_AFFINITY = "gal_ai_include_affinity"; // AI请求是否携带好感度
+    
+    // ========== Button Style Keys (按钮样式配置) ==========
+    public static final String KEY_BUTTON_FILL_COLOR = "gal_button_fill_color";
+    public static final String KEY_BUTTON_BORDER_COLOR = "gal_button_border_color";
+    public static final String KEY_BUTTON_BORDER_WIDTH = "gal_button_border_width";
+    public static final String KEY_BUTTON_TEXT_COLOR = "gal_button_text_color";
+    
+    // Button Style Default Values (按钮样式默认值)
+    public static final int DEFAULT_BUTTON_FILL_COLOR = 0xFFF2F2F2;      // #F2F2F2 浅灰色
+    public static final int DEFAULT_BUTTON_BORDER_COLOR = 0x00000000;    // 透明（无边框）
+    public static final int DEFAULT_BUTTON_BORDER_WIDTH = 0;             // 无边框
+    public static final int DEFAULT_BUTTON_TEXT_COLOR = 0xFF000000;      // 黑色
     
     // Affinity Model Constants
     public static final int AFFINITY_MODEL_MUTUAL = 0;      // 双向奔赴模型
@@ -513,6 +743,22 @@ public class ConfigManager {
     public static void setApiUrl(String url) {
         getMmkv().encode(KEY_API_URL, url);
     }
+    
+    /**
+     * 获取自定义服务商的API URL
+     * 用于在切换回自定义服务商时恢复用户之前设置的URL
+     */
+    public static String getCustomApiUrl() {
+        return getMmkv().decodeString(KEY_CUSTOM_API_URL, "");
+    }
+    
+    /**
+     * 保存自定义服务商的API URL
+     * 当服务商为custom且用户修改URL时调用
+     */
+    public static void setCustomApiUrl(String url) {
+        getMmkv().encode(KEY_CUSTOM_API_URL, url);
+    }
 
     public static String getApiKey() {
         return getMmkv().decodeString(KEY_API_KEY, "");
@@ -913,6 +1159,22 @@ public class ConfigManager {
             default:
                 return "综合加权模型";
         }
+    }
+    
+    /**
+     * 检查AI请求是否携带好感度
+     * @return true 如果启用
+     */
+    public static boolean isAiIncludeAffinity() {
+        return getMmkv().decodeBool(KEY_AI_INCLUDE_AFFINITY, false);
+    }
+    
+    /**
+     * 设置AI请求是否携带好感度
+     * @param enabled 是否启用
+     */
+    public static void setAiIncludeAffinity(boolean enabled) {
+        getMmkv().encode(KEY_AI_INCLUDE_AFFINITY, enabled);
     }
 
     // ========== Generic Methods ==========
@@ -1540,5 +1802,96 @@ public class ConfigManager {
      */
     public static void setVisionAiQps(float qps) {
         getMmkv().encode(KEY_VISION_AI_QPS, qps);
+    }
+    
+    // ========== Button Style Methods (按钮样式配置方法) ==========
+    
+    /**
+     * 获取按钮填充颜色（背景色）
+     * @return 颜色值（ARGB格式）
+     */
+    public static int getButtonFillColor() {
+        return getMmkv().decodeInt(KEY_BUTTON_FILL_COLOR, DEFAULT_BUTTON_FILL_COLOR);
+    }
+    
+    /**
+     * 设置按钮填充颜色（背景色）
+     * @param color 颜色值（ARGB格式）
+     */
+    public static void setButtonFillColor(int color) {
+        getMmkv().encode(KEY_BUTTON_FILL_COLOR, color);
+    }
+    
+    /**
+     * 获取按钮边框颜色
+     * @return 颜色值（ARGB格式）
+     */
+    public static int getButtonBorderColor() {
+        return getMmkv().decodeInt(KEY_BUTTON_BORDER_COLOR, DEFAULT_BUTTON_BORDER_COLOR);
+    }
+    
+    /**
+     * 设置按钮边框颜色
+     * @param color 颜色值（ARGB格式）
+     */
+    public static void setButtonBorderColor(int color) {
+        getMmkv().encode(KEY_BUTTON_BORDER_COLOR, color);
+    }
+    
+    /**
+     * 获取按钮边框宽度
+     * @return 宽度值（dp）
+     */
+    public static int getButtonBorderWidth() {
+        int width = getMmkv().decodeInt(KEY_BUTTON_BORDER_WIDTH, DEFAULT_BUTTON_BORDER_WIDTH);
+        // 限制边框宽度在 0-10dp 之间
+        return Math.max(0, Math.min(10, width));
+    }
+    
+    /**
+     * 设置按钮边框宽度
+     * @param width 宽度值（dp），会被限制在 0-10 之间
+     */
+    public static void setButtonBorderWidth(int width) {
+        // 限制边框宽度在 0-10dp 之间
+        int validWidth = Math.max(0, Math.min(10, width));
+        getMmkv().encode(KEY_BUTTON_BORDER_WIDTH, validWidth);
+    }
+    
+    /**
+     * 获取按钮字体颜色
+     * @return 颜色值（ARGB格式）
+     */
+    public static int getButtonTextColor() {
+        return getMmkv().decodeInt(KEY_BUTTON_TEXT_COLOR, DEFAULT_BUTTON_TEXT_COLOR);
+    }
+    
+    /**
+     * 设置按钮字体颜色
+     * @param color 颜色值（ARGB格式）
+     */
+    public static void setButtonTextColor(int color) {
+        getMmkv().encode(KEY_BUTTON_TEXT_COLOR, color);
+    }
+    
+    /**
+     * 重置所有按钮样式为默认值
+     */
+    public static void resetButtonStyles() {
+        getMmkv().remove(KEY_BUTTON_FILL_COLOR);
+        getMmkv().remove(KEY_BUTTON_BORDER_COLOR);
+        getMmkv().remove(KEY_BUTTON_BORDER_WIDTH);
+        getMmkv().remove(KEY_BUTTON_TEXT_COLOR);
+    }
+    
+    /**
+     * 检查是否有自定义按钮样式
+     * @return true 如果有任何自定义样式设置
+     */
+    public static boolean hasCustomButtonStyles() {
+        return getMmkv().contains(KEY_BUTTON_FILL_COLOR) ||
+               getMmkv().contains(KEY_BUTTON_BORDER_COLOR) ||
+               getMmkv().contains(KEY_BUTTON_BORDER_WIDTH) ||
+               getMmkv().contains(KEY_BUTTON_TEXT_COLOR);
     }
 }

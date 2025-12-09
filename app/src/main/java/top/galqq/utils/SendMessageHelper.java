@@ -142,39 +142,52 @@ public class SendMessageHelper {
     }
     
     /**
-     * 9.1.25 版本专用的普通消息发送方法
+     * 9.1.25/9.1.35 版本专用的普通消息发送方法
      * 根据日志分析:
-     * - f0方法: f0(List<c$e>, null, null, false, Bundle) - 输入元素列表，ReplyData为null
+     * - f0方法(9.1.35): f0(List<c$e>, null, null, false, Bundle, String) - 6参数
+     * - f0方法(9.1.25): f0(List<c$e>, null, null, false, Bundle) - 5参数
      * - l0方法: l0(List<msg.a.a>, Bundle, null, null) - 消息数据列表
      */
     private static boolean sendTextMessageV9125(Context context, ClassLoader classLoader, String peerUid, String messageText) {
         try {
-            debugLog("[9.1.25普通发送] 开始");
+            debugLog("[9.1.25/35普通发送] 开始");
             
             // 获取 vmDelegate
             Object vmDelegate = getAIOSendMsgVMDelegate(context);
             if (vmDelegate == null) {
-                debugLog("[9.1.25普通发送] vmDelegate 为空");
+                debugLog("[9.1.25/35普通发送] vmDelegate 为空");
                 return false;
             }
             
-            // 创建 Bundle
+            // 创建 Bundle (9.1.35使用空Bundle)
             Bundle bundle = new Bundle();
-            bundle.putString("input_text", messageText);
-            bundle.putBoolean("from_send_btn", true);
-            bundle.putInt("clearInputStatus", 1);
             
-            // 方案1: 使用 f0 方法 (输入元素列表 + null ReplyData)
+            // 方案0: 优先尝试 9.1.35 版本的 f0 方法 (6参数)
+            // f0(List<c$e>, null, null, false, Bundle.EMPTY, "")
+            List<Object> inputElementsV935 = createInputElementListV9135(classLoader, messageText);
+            if (inputElementsV935 != null && !inputElementsV935.isEmpty()) {
+                Method f0Method6 = findMethodF0V9135(vmDelegate.getClass());
+                if (f0Method6 != null) {
+                    f0Method6.setAccessible(true);
+                    debugLog("[9.1.35普通发送] 使用 f0 方法(6参数): " + Arrays.toString(f0Method6.getParameterTypes()));
+                    // f0(List<c$e>, null, null, false, Bundle.EMPTY, "")
+                    f0Method6.invoke(vmDelegate, inputElementsV935, null, null, false, bundle, "");
+                    debugLog("[9.1.35普通发送] f0 方法(6参数)成功");
+                    return true;
+                }
+            }
+            
+            // 方案1: 使用 f0 方法 (5参数，9.1.25版本)
             // 根据日志: f0(List<c$e>, null, null, false, Bundle)
             List<Object> inputElements = createInputElementListV9125(classLoader, messageText);
             if (inputElements != null && !inputElements.isEmpty()) {
                 Method f0Method = findMethodF0V9125(vmDelegate.getClass());
                 if (f0Method != null) {
                     f0Method.setAccessible(true);
-                    debugLog("[9.1.25普通发送] 使用 f0 方法: " + Arrays.toString(f0Method.getParameterTypes()));
+                    debugLog("[9.1.25普通发送] 使用 f0 方法(5参数): " + Arrays.toString(f0Method.getParameterTypes()));
                     // f0(List<c$e>, null, null, false, Bundle)
                     f0Method.invoke(vmDelegate, inputElements, null, null, false, bundle);
-                    debugLog("[9.1.25普通发送] f0 方法成功");
+                    debugLog("[9.1.25普通发送] f0 方法(5参数)成功");
                     return true;
                 }
             }
@@ -189,9 +202,9 @@ public class SendMessageHelper {
                 Method l0Method = findMethodL0(vmDelegate.getClass());
                 if (l0Method != null) {
                     l0Method.setAccessible(true);
-                    debugLog("[9.1.25普通发送] 使用 l0 方法");
+                    debugLog("[9.1.25/35普通发送] 使用 l0 方法");
                     l0Method.invoke(vmDelegate, msgList, bundle, null, null);
-                    debugLog("[9.1.25普通发送] l0 方法成功");
+                    debugLog("[9.1.25/35普通发送] l0 方法成功");
                     return true;
                 }
             }
@@ -201,21 +214,160 @@ public class SendMessageHelper {
                 Method n0Method = findMethodN0(vmDelegate.getClass());
                 if (n0Method != null) {
                     n0Method.setAccessible(true);
-                    debugLog("[9.1.25普通发送] 使用 n0 方法: " + Arrays.toString(n0Method.getParameterTypes()));
+                    debugLog("[9.1.25/35普通发送] 使用 n0 方法: " + Arrays.toString(n0Method.getParameterTypes()));
                     n0Method.invoke(vmDelegate, inputElements, bundle, null, "");
-                    debugLog("[9.1.25普通发送] n0 方法成功");
+                    debugLog("[9.1.25/35普通发送] n0 方法成功");
                     return true;
                 }
             }
             
-            debugLog("[9.1.25普通发送] 所有方法都失败");
+            debugLog("[9.1.25/35普通发送] 所有方法都失败");
             return false;
             
         } catch (Throwable t) {
-            debugLog("[9.1.25普通发送] 异常: " + t.getMessage());
+            debugLog("[9.1.25/35普通发送] 异常: " + t.getMessage());
             XposedBridge.log(t);
             return false;
         }
+    }
+    
+    // ==================== 9.1.35版本专用方法 ====================
+    
+    /**
+     * 查找 f0 方法 (9.1.35版本 - 6参数)
+     * 方法签名: f0(List, a, List, boolean, Bundle, String)
+     */
+    private static Method findMethodF0V9135(Class<?> clazz) {
+        for (Method method : clazz.getDeclaredMethods()) {
+            if (method.getName().equals("f0")) {
+                Class<?>[] paramTypes = method.getParameterTypes();
+                // 6参数版本: (List, a, List, boolean, Bundle, String)
+                if (paramTypes.length == 6 &&
+                    paramTypes[0] == List.class &&
+                    paramTypes[3] == boolean.class &&
+                    paramTypes[4] == Bundle.class &&
+                    paramTypes[5] == String.class) {
+                    debugLog("找到 f0 方法(9.1.35-6参数): " + Arrays.toString(paramTypes));
+                    return method;
+                }
+            }
+        }
+        return null;
+    }
+    
+    /**
+     * 创建输入元素列表 (9.1.35版本: c$e)
+     * 构造器: (String content, Uri uri, int subType, boolean isFlash, String atNtUid, String debugTag)
+     * 文本场景: (content, null, 0, false, "", "")
+     */
+    private static List<Object> createInputElementListV9135(ClassLoader classLoader, String content) {
+        // 尝试 c$e 类
+        String[] classNames = {
+            "com.tencent.mobileqq.aio.input.c$e",
+            "com.tencent.mobileqq.aio.input.ce",  // 可能的非内部类形式
+            "com.tencent.mobileqq.aio.input.b$e",
+            "com.tencent.mobileqq.aio.input.d$e"
+        };
+        
+        for (String className : classNames) {
+            try {
+                Class<?> elementClass = XposedHelpers.findClass(className, classLoader);
+                List<Object> result = createInputElementFromClassV9135(elementClass, content);
+                if (result != null && !result.isEmpty()) {
+                    debugLog("[9.1.35] 使用 " + className + " 创建输入元素成功");
+                    return result;
+                }
+            } catch (XposedHelpers.ClassNotFoundError ignored) {
+            } catch (Throwable t) {
+                debugLog("[9.1.35] 尝试 " + className + " 失败: " + t.getMessage());
+            }
+        }
+        return null;
+    }
+    
+    /**
+     * 从指定类创建输入元素 (9.1.35版本)
+     * 构造器: (String, Uri, int, boolean, String, String)
+     * 字段: e=String(content), f=int(subType), h=long, i=long, m=String(debugTag)
+     */
+    private static List<Object> createInputElementFromClassV9135(Class<?> elementClass, String content) {
+        try {
+            java.lang.reflect.Constructor<?>[] constructors = elementClass.getDeclaredConstructors();
+            
+            // 打印所有构造函数用于调试
+            for (int i = 0; i < constructors.length; i++) {
+                debugLog("[9.1.35] c$e 构造函数[" + i + "]: " + Arrays.toString(constructors[i].getParameterTypes()));
+            }
+            
+            // 优先尝试 6 参数构造函数 (String, Uri, int, boolean, String, String)
+            for (java.lang.reflect.Constructor<?> c : constructors) {
+                c.setAccessible(true);
+                Class<?>[] paramTypes = c.getParameterTypes();
+                
+                if (paramTypes.length == 6 && paramTypes[0] == String.class) {
+                    try {
+                        // (String content, Uri uri, int subType, boolean isFlash, String atNtUid, String debugTag)
+                        Object element = c.newInstance(content, null, 0, false, "", "");
+                        List<Object> list = new ArrayList<>();
+                        list.add(element);
+                        debugLog("[9.1.35] 使用6参数构造函数创建 c$e 成功");
+                        return list;
+                    } catch (Throwable t) {
+                        debugLog("[9.1.35] 6参数构造函数失败: " + t.getMessage());
+                    }
+                }
+            }
+            
+            // 尝试其他带参数的构造函数
+            for (java.lang.reflect.Constructor<?> c : constructors) {
+                c.setAccessible(true);
+                Class<?>[] paramTypes = c.getParameterTypes();
+                
+                if (paramTypes.length >= 1 && paramTypes[0] == String.class) {
+                    Object[] args = new Object[paramTypes.length];
+                    args[0] = content;
+                    for (int i = 1; i < paramTypes.length; i++) {
+                        Class<?> type = paramTypes[i];
+                        if (type == int.class) args[i] = 0;
+                        else if (type == long.class) args[i] = 0L;
+                        else if (type == boolean.class) args[i] = false;
+                        else if (type == String.class) args[i] = "";
+                        else args[i] = null;  // Uri 等对象类型
+                    }
+                    
+                    try {
+                        Object element = c.newInstance(args);
+                        List<Object> list = new ArrayList<>();
+                        list.add(element);
+                        debugLog("[9.1.35] 使用" + paramTypes.length + "参数构造函数创建 c$e 成功");
+                        return list;
+                    } catch (Throwable t) {
+                        debugLog("[9.1.35] " + paramTypes.length + "参数构造函数失败: " + t.getMessage());
+                    }
+                }
+            }
+            
+            // 尝试无参构造函数 + 设置字段
+            for (java.lang.reflect.Constructor<?> c : constructors) {
+                if (c.getParameterTypes().length == 0) {
+                    c.setAccessible(true);
+                    Object element = c.newInstance();
+                    // 9.1.35版本字段: e=content, f=subType(0), h=0, i=0, m=debugTag("")
+                    trySetField(element, "e", content);
+                    trySetIntField(element, "f", 0);
+                    trySetLongField(element, "h", 0L);
+                    trySetLongField(element, "i", 0L);
+                    trySetField(element, "m", "");
+                    List<Object> list = new ArrayList<>();
+                    list.add(element);
+                    debugLog("[9.1.35] 使用无参构造函数+字段设置创建 c$e 成功");
+                    return list;
+                }
+            }
+        } catch (Throwable t) {
+            debugLog("[9.1.35] createInputElementFromClassV9135 失败: " + t.getMessage());
+        }
+        return null;
     }
     
     /**

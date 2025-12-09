@@ -444,7 +444,22 @@ public class HttpAiClient {
                                     List<top.galqq.utils.MessageContextManager.ChatMessage> contextMessages,
                                     AiCallback callback) {
         fetchOptionsInternal(context, userMessage, currentSenderName, currentTimestamp, 
-                            contextMessages, null, null, callback, true);
+                            contextMessages, null, null, null, null, callback, true);
+    }
+    
+    /**
+     * 获取AI生成的回复选项（带发送者QQ，静默模式）
+     * 用于队列重试场景，支持好感度
+     * 
+     * @param senderUin 发送者QQ号（用于获取好感度）
+     */
+    public static void fetchOptionsSilent(Context context, String userMessage,
+                                    String currentSenderName, long currentTimestamp,
+                                    List<top.galqq.utils.MessageContextManager.ChatMessage> contextMessages,
+                                    String senderUin,
+                                    AiCallback callback) {
+        fetchOptionsInternal(context, userMessage, currentSenderName, currentTimestamp, 
+                            contextMessages, null, null, null, senderUin, callback, true);
     }
     
     /**
@@ -477,7 +492,23 @@ public class HttpAiClient {
                                     String customPrompt,
                                     AiCallback callback) {
         fetchOptionsInternal(context, userMessage, currentSenderName, currentTimestamp, 
-                            contextMessages, customPrompt, null, callback, true);
+                            contextMessages, customPrompt, null, null, null, callback, true);
+    }
+    
+    /**
+     * 获取AI生成的回复选项（带自定义提示词、发送者QQ，静默模式）
+     * 用于队列重试场景，支持好感度
+     * 
+     * @param senderUin 发送者QQ号（用于获取好感度）
+     */
+    public static void fetchOptionsWithPromptSilent(Context context, String userMessage,
+                                    String currentSenderName, long currentTimestamp,
+                                    List<top.galqq.utils.MessageContextManager.ChatMessage> contextMessages,
+                                    String customPrompt,
+                                    String senderUin,
+                                    AiCallback callback) {
+        fetchOptionsInternal(context, userMessage, currentSenderName, currentTimestamp, 
+                            contextMessages, customPrompt, null, null, senderUin, callback, true);
     }
     
     /**
@@ -525,6 +556,34 @@ public class HttpAiClient {
                                     List<ImageExtractor.ImageElement> imageElements,
                                     String conversationId, String msgId,
                                     AiCallback callback) {
+        fetchOptionsWithImages(context, userMessage, currentSenderName, currentTimestamp,
+                              contextMessages, customPrompt, imageElements, conversationId, msgId, null, callback);
+    }
+    
+    /**
+     * 获取AI生成的回复选项（带图片信息、缓存支持和发送者QQ）
+     * 当消息包含图片时，先通过外挂AI获取图片描述，再调用主AI
+     * 
+     * @param context Android上下文
+     * @param userMessage 当前用户消息内容
+     * @param currentSenderName 当前消息发送人昵称
+     * @param currentTimestamp 当前消息时间戳
+     * @param contextMessages 历史上下文消息（可为null）
+     * @param customPrompt 自定义提示词内容（如果为null则使用默认）
+     * @param imageElements 图片元素列表（可为null）
+     * @param conversationId 会话ID（用于缓存）
+     * @param msgId 消息ID（用于缓存和标识）
+     * @param senderUin 发送者QQ号（用于获取好感度）
+     * @param callback 回调
+     */
+    public static void fetchOptionsWithImages(Context context, String userMessage,
+                                    String currentSenderName, long currentTimestamp,
+                                    List<top.galqq.utils.MessageContextManager.ChatMessage> contextMessages,
+                                    String customPrompt,
+                                    List<ImageExtractor.ImageElement> imageElements,
+                                    String conversationId, String msgId,
+                                    String senderUin,
+                                    AiCallback callback) {
         // 如果没有图片或图片识别未启用
         if (imageElements == null || imageElements.isEmpty() || !ConfigManager.isImageRecognitionEnabled()) {
             // 检查是否需要处理上下文图片（不再要求必须启用外挂AI）
@@ -537,6 +596,7 @@ public class HttpAiClient {
             if (needContextImageRecognition) {
                 // 有上下文图片需要处理，在后台线程处理
                 Log.d(TAG, "当前消息无图片，但有上下文图片需要处理");
+                final String finalSenderUin = senderUin;
                 new Thread(() -> {
                     try {
                         // 根据是否启用外挂AI选择处理方式
@@ -547,20 +607,20 @@ public class HttpAiClient {
                         }
                         mainHandler.post(() -> {
                             fetchOptionsInternal(context, userMessage, currentSenderName, currentTimestamp, 
-                                                contextMessages, customPrompt, null, conversationId, callback, false);
+                                                contextMessages, customPrompt, null, conversationId, finalSenderUin, callback, false);
                         });
                     } catch (Exception e) {
                         Log.e(TAG, "上下文图片识别失败: " + e.getMessage());
                         mainHandler.post(() -> {
                             fetchOptionsInternal(context, userMessage, currentSenderName, currentTimestamp, 
-                                                contextMessages, customPrompt, null, conversationId, callback, false);
+                                                contextMessages, customPrompt, null, conversationId, finalSenderUin, callback, false);
                         });
                     }
                 }).start();
             } else {
                 // 不需要处理上下文图片，直接调用
                 fetchOptionsInternal(context, userMessage, currentSenderName, currentTimestamp, 
-                                    contextMessages, customPrompt, null, callback, false);
+                                    contextMessages, customPrompt, null, null, senderUin, callback, false);
             }
             return;
         }
@@ -573,7 +633,7 @@ public class HttpAiClient {
             Log.d(TAG, "使用外挂AI处理图片");
             processImagesWithVisionAi(context, userMessage, currentSenderName, currentTimestamp,
                                       contextMessages, customPrompt, imageElements, 
-                                      conversationId, msgId, callback);
+                                      conversationId, msgId, senderUin, callback);
         } else {
             // 未启用外挂AI，将图片Base64直接发送给主AI（如果主AI支持Vision）
             Log.d(TAG, "未启用外挂AI，尝试直接获取图片Base64");
@@ -588,6 +648,7 @@ public class HttpAiClient {
                 // 在后台线程处理上下文图片和当前图片
                 Log.d(TAG, "启用了上下文图片识别，在后台线程处理所有图片");
                 final String finalConversationId = conversationId;
+                final String finalSenderUin = senderUin;
                 new Thread(() -> {
                     try {
                         // 处理上下文图片
@@ -607,17 +668,17 @@ public class HttpAiClient {
                         mainHandler.post(() -> {
                             if (!imageBase64List.isEmpty()) {
                                 fetchOptionsInternal(context, userMessage, currentSenderName, currentTimestamp, 
-                                                    contextMessages, customPrompt, imageBase64List, finalConversationId, callback, false);
+                                                    contextMessages, customPrompt, imageBase64List, finalConversationId, finalSenderUin, callback, false);
                             } else {
                                 fetchOptionsInternal(context, userMessage, currentSenderName, currentTimestamp, 
-                                                    contextMessages, customPrompt, null, finalConversationId, callback, false);
+                                                    contextMessages, customPrompt, null, finalConversationId, finalSenderUin, callback, false);
                             }
                         });
                     } catch (Exception e) {
                         Log.e(TAG, "处理图片失败: " + e.getMessage());
                         mainHandler.post(() -> {
                             fetchOptionsInternal(context, userMessage, currentSenderName, currentTimestamp, 
-                                                contextMessages, customPrompt, null, callback, false);
+                                                contextMessages, customPrompt, null, null, finalSenderUin, callback, false);
                         });
                     }
                 }).start();
@@ -642,12 +703,12 @@ public class HttpAiClient {
             
             if (!imageBase64List.isEmpty()) {
                 fetchOptionsInternal(context, userMessage, currentSenderName, currentTimestamp, 
-                                    contextMessages, customPrompt, imageBase64List, callback, false);
+                                    contextMessages, customPrompt, imageBase64List, null, senderUin, callback, false);
             } else {
                 // 无法获取图片Base64，降级为普通请求
                 Log.w(TAG, "无法获取任何图片Base64，降级为普通请求");
                 fetchOptionsInternal(context, userMessage, currentSenderName, currentTimestamp, 
-                                    contextMessages, customPrompt, null, callback, false);
+                                    contextMessages, customPrompt, null, null, senderUin, callback, false);
             }
         }
     }
@@ -666,7 +727,7 @@ public class HttpAiClient {
                                     List<ImageExtractor.ImageElement> imageElements,
                                     AiCallback callback) {
         processImagesWithVisionAi(context, userMessage, currentSenderName, currentTimestamp,
-                                  contextMessages, customPrompt, imageElements, null, null, callback);
+                                  contextMessages, customPrompt, imageElements, null, null, null, callback);
     }
     
     /**
@@ -682,6 +743,7 @@ public class HttpAiClient {
                                     String customPrompt,
                                     List<ImageExtractor.ImageElement> imageElements,
                                     String conversationId, String msgId,
+                                    String senderUin,
                                     AiCallback callback) {
         // 在后台线程处理图片
         new Thread(() -> {
@@ -733,11 +795,12 @@ public class HttpAiClient {
                 AiLogManager.logImageRecognition(context, imageElements.size(), 0, 
                     imageDescriptions, System.currentTimeMillis());
                 
-                // 在主线程调用主AI（传递conversationId用于上下文图片）
+                // 在主线程调用主AI（传递conversationId和senderUin用于上下文图片和好感度）
                 final String finalConversationId = conversationId;
+                final String finalSenderUin = senderUin;
                 mainHandler.post(() -> {
                     fetchOptionsInternal(context, mergedMessage, currentSenderName, currentTimestamp, 
-                                        contextMessages, customPrompt, null, finalConversationId, callback, false);
+                                        contextMessages, customPrompt, null, finalConversationId, finalSenderUin, callback, false);
                 });
                 
             } catch (Exception e) {
@@ -746,9 +809,10 @@ public class HttpAiClient {
                 
                 // 降级为不带图片的请求
                 final String finalConversationId = conversationId;
+                final String finalSenderUin = senderUin;
                 mainHandler.post(() -> {
                     fetchOptionsInternal(context, userMessage, currentSenderName, currentTimestamp, 
-                                        contextMessages, customPrompt, null, finalConversationId, callback, false);
+                                        contextMessages, customPrompt, null, finalConversationId, finalSenderUin, callback, false);
                 });
             }
         }).start();
@@ -950,7 +1014,7 @@ public class HttpAiClient {
                                     List<String> imageBase64List,
                                     AiCallback callback, boolean suppressToast) {
         fetchOptionsInternal(context, userMessage, currentSenderName, currentTimestamp,
-                            contextMessages, customPrompt, imageBase64List, null, callback, suppressToast);
+                            contextMessages, customPrompt, imageBase64List, null, null, callback, suppressToast);
     }
     
     /**
@@ -964,6 +1028,7 @@ public class HttpAiClient {
      * @param customPrompt 自定义提示词内容（如果为null则使用默认）
      * @param imageBase64List 图片Base64编码列表（可为null，用于直接发送图片给支持Vision的AI）
      * @param conversationId 会话ID（用于上下文图片缓存）
+     * @param senderUin 发送者QQ号（用于获取好感度，可为null）
      * @param callback 回调
      * @param suppressToast 是否抑制Toast提示（重试时使用）
      */
@@ -973,8 +1038,9 @@ public class HttpAiClient {
                                     String customPrompt,
                                     List<String> imageBase64List,
                                     String conversationId,
+                                    String senderUin,
                                     AiCallback callback, boolean suppressToast) {
-        String apiUrl = ConfigManager.getApiUrl();
+        String apiUrl = normalizeApiUrl(ConfigManager.getApiUrl());
         String apiKey = ConfigManager.getApiKey();
         // 使用自定义提示词或默认提示词
         String sysPrompt = (customPrompt != null && !customPrompt.isEmpty()) 
@@ -1104,14 +1170,48 @@ public class HttpAiClient {
                             // 有base64图片，需要构建带图片的content数组
                             JSONArray contentArray = new JSONArray();
                             
-                            // 添加文本内容
-                            String textContent = msg.senderName + " [" + timeStr + "]: " + msgContent;
-                            if (!textDescriptions.isEmpty()) {
-                                textContent += "\n[图片描述: " + String.join(", ", textDescriptions) + "]";
+                            // 构建文本内容（使用新格式）
+                            StringBuilder textContentBuilder = new StringBuilder();
+                            
+                            // 添加好感度（如果启用且有senderUin）
+                            if (ConfigManager.isAffinityEnabled() && ConfigManager.isAiIncludeAffinity() 
+                                && msg.senderUin != null && !msg.senderUin.isEmpty() && !msg.isSelf) {
+                                try {
+                                    AffinityManager affinityManager = AffinityManager.getInstance(context);
+                                    int affinity = affinityManager.getAffinity(msg.senderUin);
+                                    if (affinity >= 0) {
+                                        textContentBuilder.append("[好感度:").append(affinity).append("]");
+                                    }
+                                } catch (Throwable t) {
+                                    // 忽略好感度获取失败
+                                }
                             }
+                            
+                            // 添加发送人名称
+                            String displayName = (msg.senderName != null && !msg.senderName.isEmpty()) 
+                                ? msg.senderName : "昵称获取失败";
+                            textContentBuilder.append(displayName);
+                            
+                            // 添加[我]标记
+                            if (msg.isSelf) {
+                                textContentBuilder.append("[我]");
+                            }
+                            
+                            // 添加QQ号
+                            if (msg.senderUin != null && !msg.senderUin.isEmpty()) {
+                                textContentBuilder.append("[").append(msg.senderUin).append("]");
+                            }
+                            
+                            // 添加时间和内容
+                            textContentBuilder.append(" [").append(timeStr).append("]: ").append(msgContent);
+                            
+                            if (!textDescriptions.isEmpty()) {
+                                textContentBuilder.append("\n[图片描述: ").append(String.join(", ", textDescriptions)).append("]");
+                            }
+                            
                             JSONObject textObj = new JSONObject();
                             textObj.put("type", "text");
-                            textObj.put("text", textContent);
+                            textObj.put("text", textContentBuilder.toString());
                             contentArray.put(textObj);
                             
                             // 添加图片
@@ -1134,9 +1234,42 @@ public class HttpAiClient {
                         }
                     }
                     
-                    // 格式化为 "发送人 [时间]: 消息内容"
-                    String formattedContent = msg.senderName + " [" + timeStr + "]: " + msgContent;
-                    ctxMsg.put("content", formattedContent);
+                    // 格式化为 "[好感度]发送人[我][qq号][时间]: 消息内容"
+                    StringBuilder formattedContent = new StringBuilder();
+                    
+                    // 添加好感度（如果启用且有senderUin）
+                    if (ConfigManager.isAffinityEnabled() && ConfigManager.isAiIncludeAffinity() 
+                        && msg.senderUin != null && !msg.senderUin.isEmpty() && !msg.isSelf) {
+                        try {
+                            AffinityManager affinityManager = AffinityManager.getInstance(context);
+                            int affinity = affinityManager.getAffinity(msg.senderUin);
+                            if (affinity >= 0) {
+                                formattedContent.append("[好感度:").append(affinity).append("]");
+                            }
+                        } catch (Throwable t) {
+                            // 忽略好感度获取失败
+                        }
+                    }
+                    
+                    // 添加发送人名称（如果获取失败显示"昵称获取失败"）
+                    String displayName = (msg.senderName != null && !msg.senderName.isEmpty()) 
+                        ? msg.senderName : "昵称获取失败";
+                    formattedContent.append(displayName);
+                    
+                    // 添加[我]标记（如果是自己发送的）
+                    if (msg.isSelf) {
+                        formattedContent.append("[我]");
+                    }
+                    
+                    // 添加QQ号（如果有）
+                    if (msg.senderUin != null && !msg.senderUin.isEmpty()) {
+                        formattedContent.append("[").append(msg.senderUin).append("]");
+                    }
+                    
+                    // 添加时间和内容
+                    formattedContent.append(" [").append(timeStr).append("]: ").append(msgContent);
+                    
+                    ctxMsg.put("content", formattedContent.toString());
                     messages.put(ctxMsg);
                 }
                 Log.i(TAG, "Added " + contextMessages.size() + " context messages");
@@ -1156,17 +1289,53 @@ public class HttpAiClient {
             }
             
             // 格式化当前消息：添加[当前需添加选项信息]标签
+            // 新格式：[好感度]昵称[我][qq号][时间]：信息
             String formattedCurrentMsg;
-            if (currentSenderName != null && !currentSenderName.isEmpty() && currentTimestamp > 0) {
+            if (currentTimestamp > 0) {
                 // 创建时间格式化器
                 java.text.SimpleDateFormat timeFormat = new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault());
                 String currentTimeStr = timeFormat.format(new java.util.Date(currentTimestamp));
                 
-                // 格式：[当前需添加选项信息] 昵称 [时间]: 内容
-                formattedCurrentMsg = "[当前需添加选项信息] " + currentSenderName + " [" + currentTimeStr + "]: " + filteredUserMessage;
+                // 构建昵称部分（如果获取失败显示"昵称获取失败"）
+                String displayName = (currentSenderName != null && !currentSenderName.isEmpty()) 
+                    ? currentSenderName : "昵称获取失败";
+                
+                // 构建好感度部分（如果启用且有senderUin）
+                String affinityPart = "";
+                boolean affinityEnabled = ConfigManager.isAffinityEnabled();
+                boolean aiIncludeAffinity = ConfigManager.isAiIncludeAffinity();
+                if (ConfigManager.isVerboseLogEnabled()) {
+                    Log.d(TAG, "好感度配置检查: affinityEnabled=" + affinityEnabled + ", aiIncludeAffinity=" + aiIncludeAffinity + ", senderUin=" + senderUin);
+                }
+                
+                if (affinityEnabled && aiIncludeAffinity && senderUin != null) {
+                    try {
+                        AffinityManager affinityManager = AffinityManager.getInstance(context);
+                        int affinity = affinityManager.getAffinity(senderUin);
+                        if (ConfigManager.isVerboseLogEnabled()) {
+                            Log.d(TAG, "获取到好感度: " + affinity + " for " + senderUin);
+                        }
+                        if (affinity >= 0) {
+                            affinityPart = "[好感度:" + affinity + "]";
+                            if (ConfigManager.isVerboseLogEnabled()) {
+                                Log.d(TAG, "好感度部分: " + affinityPart);
+                            }
+                        }
+                    } catch (Throwable t) {
+                        Log.w(TAG, "获取好感度失败: " + t.getMessage(), t);
+                    }
+                }
+                
+                // 构建QQ号部分
+                String qqPart = (senderUin != null && !senderUin.isEmpty()) ? "[" + senderUin + "]" : "";
+                
+                // 格式：[当前需添加选项信息] [好感度]昵称[qq号][时间]: 内容
+                formattedCurrentMsg = "[当前需添加选项信息] " + affinityPart + displayName + qqPart + " [" + currentTimeStr + "]: " + filteredUserMessage;
             } else {
-                // 降级：如果没有元数据，仅添加标签
-                formattedCurrentMsg = "[当前需添加选项信息] " + filteredUserMessage;
+                // 降级：如果没有时间戳，仅添加标签和昵称
+                String displayName = (currentSenderName != null && !currentSenderName.isEmpty()) 
+                    ? currentSenderName : "昵称获取失败";
+                formattedCurrentMsg = "[当前需添加选项信息] " + displayName + ": " + filteredUserMessage;
             }
             
             // 检查是否有图片需要发送（OpenAI Vision格式）
@@ -2390,6 +2559,52 @@ public class HttpAiClient {
             return "****";
         }
         return apiKey.substring(0, 4) + "****" + apiKey.substring(apiKey.length() - 4);
+    }
+
+    /**
+     * 规范化API URL（防呆设计）
+     * 如果用户只输入了域名，自动添加 /v1/chat/completions 路径
+     * 
+     * @param apiUrl 原始API URL
+     * @return 规范化后的API URL
+     */
+    private static String normalizeApiUrl(String apiUrl) {
+        if (apiUrl == null || apiUrl.trim().isEmpty()) {
+            return apiUrl;
+        }
+        
+        apiUrl = apiUrl.trim();
+        
+        // 移除末尾的斜杠
+        while (apiUrl.endsWith("/")) {
+            apiUrl = apiUrl.substring(0, apiUrl.length() - 1);
+        }
+        
+        try {
+            java.net.URL url = new java.net.URL(apiUrl);
+            String path = url.getPath();
+            
+            // 如果路径为空或只有 /，说明用户只输入了域名
+            // 例如: https://api.example.com 或 https://api.example.com/
+            if (path == null || path.isEmpty() || path.equals("/")) {
+                String normalizedUrl = apiUrl + "/v1/chat/completions";
+                Log.d(TAG, "API URL规范化: " + apiUrl + " -> " + normalizedUrl);
+                return normalizedUrl;
+            }
+            
+            // 如果路径只有版本号，如 /v1，添加 /chat/completions
+            if (path.matches("/v\\d+/?")) {
+                String normalizedUrl = apiUrl.replaceAll("/$", "") + "/chat/completions";
+                Log.d(TAG, "API URL规范化: " + apiUrl + " -> " + normalizedUrl);
+                return normalizedUrl;
+            }
+            
+        } catch (Exception e) {
+            Log.w(TAG, "解析API URL失败: " + e.getMessage());
+        }
+        
+        // 其他情况保持原样
+        return apiUrl;
     }
 
     /**

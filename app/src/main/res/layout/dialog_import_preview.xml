@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <!-- 元数据区域 -->
+    <TextView
+        android:id="@+id/tv_metadata_title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="配置信息"
+        android:textStyle="bold"
+        android:textSize="14sp"
+        android:textColor="?android:attr/textColorPrimary" />
+
+    <TextView
+        android:id="@+id/tv_metadata"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:layout_marginBottom="12dp"
+        android:textSize="12sp"
+        android:textColor="?android:attr/textColorSecondary"
+        android:lineSpacingExtra="2dp" />
+
+    <!-- 分类选择区域 -->
+    <TextView
+        android:id="@+id/tv_category_title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="选择要导入的分类"
+        android:textStyle="bold"
+        android:textSize="14sp"
+        android:textColor="?android:attr/textColorPrimary" />
+
+    <LinearLayout
+        android:id="@+id/ll_categories"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:orientation="vertical" />
+
+    <!-- 全选/取消全选按钮 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btn_select_all"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginEnd="4dp"
+            android:text="全选"
+            style="?android:attr/buttonBarButtonStyle" />
+
+        <Button
+            android:id="@+id/btn_deselect_all"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="4dp"
+            android:text="取消全选"
+            style="?android:attr/buttonBarButtonStyle" />
+    </LinearLayout>
+
+    <!-- 警告信息区域 -->
+    <TextView
+        android:id="@+id/tv_warnings_title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="⚠ 警告"
+        android:textStyle="bold"
+        android:textSize="14sp"
+        android:textColor="#FF9800"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/tv_warnings"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:textSize="12sp"
+        android:textColor="#FF9800"
+        android:visibility="gone" />
+
+</LinearLayout>

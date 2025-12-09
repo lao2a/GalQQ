@@ -42,6 +42,7 @@ public class MessageContextManager {
      */
     public static class ChatMessage {
         public final String senderName;   // 发送人名称
+        public final String senderUin;    // 发送人QQ号（用于好感度查询）
         public final String content;       // 消息内容（可能包含图片描述占位符）
         public final boolean isSelf;       // 是否是自己发送的
         public final long timestamp;       // 时间戳
@@ -50,11 +51,16 @@ public class MessageContextManager {
         public final boolean hasImages;    // 是否包含图片
         
         public ChatMessage(String senderName, String content, boolean isSelf, long timestamp, String msgId) {
-            this(senderName, content, isSelf, timestamp, msgId, 0);
+            this(senderName, null, content, isSelf, timestamp, msgId, 0);
         }
         
         public ChatMessage(String senderName, String content, boolean isSelf, long timestamp, String msgId, int imageCount) {
+            this(senderName, null, content, isSelf, timestamp, msgId, imageCount);
+        }
+        
+        public ChatMessage(String senderName, String senderUin, String content, boolean isSelf, long timestamp, String msgId, int imageCount) {
             this.senderName = senderName;
+            this.senderUin = senderUin;
             this.content = content;
             this.isSelf = isSelf;
             this.timestamp = timestamp;
@@ -158,7 +164,7 @@ public class MessageContextManager {
      */
     public static void addMessage(String conversationId, String senderName, String content, 
                                   boolean isSelf, String msgId, long msgTime) {
-        addMessage(conversationId, senderName, content, isSelf, msgId, msgTime, 0);
+        addMessage(conversationId, senderName, null, content, isSelf, msgId, msgTime, 0);
     }
     
     /**
@@ -173,6 +179,23 @@ public class MessageContextManager {
      * @param imageCount 图片数量
      */
     public static void addMessage(String conversationId, String senderName, String content, 
+                                  boolean isSelf, String msgId, long msgTime, int imageCount) {
+        addMessage(conversationId, senderName, null, content, isSelf, msgId, msgTime, imageCount);
+    }
+    
+    /**
+     * 添加消息到缓存（带去重、时间戳、图片数量和发送者QQ号）
+     * 
+     * @param conversationId 会话ID（通常是对方的UIN或群ID）
+     * @param senderName 发送人名称
+     * @param senderUin 发送人QQ号（用于好感度查询）
+     * @param content 消息内容
+     * @param isSelf 是否是自己发送的
+     * @param msgId 消息ID（用于去重）
+     * @param msgTime 消息时间戳（毫秒）
+     * @param imageCount 图片数量
+     */
+    public static void addMessage(String conversationId, String senderName, String senderUin, String content, 
                                   boolean isSelf, String msgId, long msgTime, int imageCount) {
         // XposedBridge.log(TAG + ": 📥 准备添加消息到上下文");
         // XposedBridge.log(TAG + ":   conversationId=" + conversationId);
@@ -217,6 +240,7 @@ public class MessageContextManager {
             
             ChatMessage message = new ChatMessage(
                 senderName != null ? senderName : "未知",
+                senderUin,
                 content,
                 isSelf,
                 timestamp,

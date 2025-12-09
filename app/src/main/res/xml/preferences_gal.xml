@@ -365,10 +365,46 @@
             android:defaultValue="2"
             android:summary="选择好感度计算方式" />
         
+        <SwitchPreference
+            android:key="gal_ai_include_affinity"
+            android:title="AI请求携带好感度"
+            android:summary="在发送给AI的消息中包含好感度信息，帮助AI生成更贴合关系的回复"
+            android:defaultValue="false"
+            android:dependency="gal_affinity_enabled" />
+        
         <Preference
             android:key="gal_test_affinity"
             android:title="测试好感度数据获取"
             android:summary="测试Cookie和亲密度API是否正常工作" />
+    </PreferenceCategory>
+    
+    <PreferenceCategory android:title="@string/gal_button_style_cat_title">
+        <Preference
+            android:key="gal_button_fill_color"
+            android:title="@string/gal_button_fill_color_title"
+            android:summary="@string/gal_button_fill_color_summary" />
+        
+        <Preference
+            android:key="gal_button_border_color"
+            android:title="@string/gal_button_border_color_title"
+            android:summary="@string/gal_button_border_color_summary" />
+        
+        <EditTextPreference
+            android:key="gal_button_border_width"
+            android:title="@string/gal_button_border_width_title"
+            android:summary="@string/gal_button_border_width_summary"
+            android:inputType="number"
+            android:defaultValue="0" />
+        
+        <Preference
+            android:key="gal_button_text_color"
+            android:title="@string/gal_button_text_color_title"
+            android:summary="@string/gal_button_text_color_summary" />
+        
+        <Preference
+            android:key="gal_reset_button_style"
+            android:title="@string/gal_reset_button_style_title"
+            android:summary="@string/gal_reset_button_style_summary" />
     </PreferenceCategory>
 
     <PreferenceCategory android:title="@string/gal_dict_cat_title">
@@ -377,6 +413,23 @@
             android:title="@string/gal_dict_path_title"
             android:summary="@string/gal_dict_path_summary"
             android:defaultValue="" />
+    </PreferenceCategory>
+
+    <PreferenceCategory android:title="配置管理">
+        <Preference
+            android:key="gal_export_config"
+            android:title="导出配置"
+            android:summary="将当前配置导出为 JSON 文件" />
+        
+        <Preference
+            android:key="gal_import_config"
+            android:title="导入配置"
+            android:summary="从 JSON 文件导入配置" />
+        
+        <Preference
+            android:key="gal_reset_config"
+            android:title="重置配置"
+            android:summary="清除所有配置，恢复默认设置" />
     </PreferenceCategory>
 
     <PreferenceCategory android:title="@string/gal_about_cat_title">

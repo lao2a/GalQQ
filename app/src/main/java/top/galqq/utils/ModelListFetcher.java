@@ -234,7 +234,9 @@ public class ModelListFetcher {
     }
     
     /**
-     * 构建 /v1/models URL
+     * 构建 /models URL
+     * 支持多种API版本路径：/v1/, /v2/, /v3/, /v4/ 等
+     * 防呆设计：如果用户只输入域名，自动添加 /v1/models
      */
     private static String buildModelsUrl(String apiUrl) {
         // 移除末尾的斜杠
@@ -243,23 +245,39 @@ public class ModelListFetcher {
             apiUrl = apiUrl.substring(0, apiUrl.length() - 1);
         }
         
-        // 如果URL已经包含 /v1/chat/completions，替换为 /v1/models
-        if (apiUrl.contains("/v1/chat/completions")) {
-            return apiUrl.replace("/v1/chat/completions", "/v1/models");
+        // 检查是否只有域名（没有路径）
+        // 例如: https://api.example.com
+        try {
+            java.net.URL url = new java.net.URL(apiUrl);
+            String path = url.getPath();
+            
+            // 如果路径为空或只有 /，说明用户只输入了域名
+            if (path == null || path.isEmpty() || path.equals("/")) {
+                Log.d(TAG, "检测到纯域名，自动添加 /v1/models: " + apiUrl);
+                return apiUrl + "/v1/models";
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "解析URL失败: " + e.getMessage());
         }
         
-        // 如果URL已经包含 /v1，直接添加 /models
-        if (apiUrl.endsWith("/v1")) {
+        // 使用正则匹配 /v数字/chat/completions 或 /v数字/其他路径
+        // 例如: /v1/chat/completions, /v4/chat/completions, /v1/messages 等
+        java.util.regex.Pattern versionPattern = java.util.regex.Pattern.compile("(/v\\d+)/.*$");
+        java.util.regex.Matcher matcher = versionPattern.matcher(apiUrl);
+        
+        if (matcher.find()) {
+            // 找到版本路径，替换后面的部分为 /models
+            String versionPath = matcher.group(1); // 如 /v1, /v4
+            int versionIndex = apiUrl.indexOf(versionPath);
+            return apiUrl.substring(0, versionIndex) + versionPath + "/models";
+        }
+        
+        // 如果URL以 /v数字 结尾（如 https://api.example.com/v1）
+        if (apiUrl.matches(".*?/v\\d+$")) {
             return apiUrl + "/models";
         }
         
-        // 如果URL包含 /v1/ 但不是以它结尾，找到 /v1 的位置并替换后面的部分
-        int v1Index = apiUrl.indexOf("/v1/");
-        if (v1Index != -1) {
-            return apiUrl.substring(0, v1Index) + "/v1/models";
-        }
-        
-        // 否则直接在末尾添加 /v1/models
+        // 否则直接在末尾添加 /v1/models（兼容旧逻辑）
         return apiUrl + "/v1/models";
     }
     

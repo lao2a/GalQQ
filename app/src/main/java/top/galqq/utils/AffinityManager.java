@@ -48,12 +48,16 @@ public class AffinityManager {
      * @return 好感度值 (0-100)，如果数据不可用返回 -1
      */
     public int getAffinity(String uin) {
+        boolean verbose = top.galqq.config.ConfigManager.isVerboseLogEnabled();
+        
         // 检查功能是否启用
         if (!top.galqq.config.ConfigManager.isAffinityEnabled()) {
+            if (verbose) XposedBridge.log(TAG + ": 好感度功能未启用");
             return -1;
         }
         
         if (uin == null || uin.isEmpty()) {
+            if (verbose) XposedBridge.log(TAG + ": uin为空");
             return -1;
         }
         
@@ -61,10 +65,16 @@ public class AffinityManager {
         java.util.Map<String, Integer> whoCaresMe = mCache.getWhoCaresMe();
         java.util.Map<String, Integer> whoICare = mCache.getWhoICare();
         
+        if (verbose) {
+            XposedBridge.log(TAG + ": 缓存状态 - whoCaresMe=" + (whoCaresMe != null ? whoCaresMe.size() : "null") 
+                           + ", whoICare=" + (whoICare != null ? whoICare.size() : "null"));
+        }
+        
         // 如果缓存为空，尝试触发刷新
         if (whoCaresMe == null && whoICare == null) {
             // 异步刷新，不阻塞当前调用
             if (!mIsRefreshing) {
+                if (verbose) XposedBridge.log(TAG + ": 缓存为空，触发刷新");
                 refreshData(null);
             }
             return -1;
@@ -74,8 +84,13 @@ public class AffinityManager {
         Integer caresMeValue = whoCaresMe != null ? whoCaresMe.get(uin) : null;
         Integer iCareValue = whoICare != null ? whoICare.get(uin) : null;
         
+        if (verbose) {
+            XposedBridge.log(TAG + ": 用户 " + uin + " 的数据 - caresMeValue=" + caresMeValue + ", iCareValue=" + iCareValue);
+        }
+        
         // 如果两个值都不存在，返回 -1
         if (caresMeValue == null && iCareValue == null) {
+            if (verbose) XposedBridge.log(TAG + ": 用户 " + uin + " 不在好感度列表中");
             return -1;
         }
         
@@ -83,7 +98,9 @@ public class AffinityManager {
         int a = caresMeValue != null ? caresMeValue : 0;
         int b = iCareValue != null ? iCareValue : 0;
         
-        return calculateAffinity(a, b);
+        int result = calculateAffinity(a, b);
+        if (verbose) XposedBridge.log(TAG + ": 用户 " + uin + " 的好感度计算结果: " + result);
+        return result;
     }
 
     /**

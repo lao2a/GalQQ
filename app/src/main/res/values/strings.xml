@@ -93,6 +93,81 @@
     <string name="vision_api_key_empty">请填写外挂AI API Key</string>
     <string name="vision_ai_testing">正在测试外挂AI连接...</string>
     
+    <!-- 配置管理 -->
+    <string name="gal_config_cat_title">配置管理</string>
+    <string name="gal_export_config_title">导出配置</string>
+    <string name="gal_export_config_summary">将当前配置导出为 JSON 文件</string>
+    <string name="gal_import_config_title">导入配置</string>
+    <string name="gal_import_config_summary">从 JSON 文件导入配置</string>
+    <string name="gal_reset_config_title">重置配置</string>
+    <string name="gal_reset_config_summary">清除所有配置，恢复默认设置</string>
+    
+    <!-- 配置导出对话框 -->
+    <string name="export_config_dialog_title">导出配置</string>
+    <string name="export_config_include_sensitive">是否包含敏感数据（API Key、代理密码等）？</string>
+    <string name="export_config_include_sensitive_desc_yes">包含敏感数据：完整备份，可直接恢复</string>
+    <string name="export_config_include_sensitive_desc_no">不包含敏感数据：安全分享，需手动填写密钥</string>
+    <string name="export_config_btn_include">包含敏感数据</string>
+    <string name="export_config_btn_exclude">不包含</string>
+    <string name="export_config_success">✅ 配置导出成功</string>
+    <string name="export_config_failed">❌ 配置导出失败</string>
+    
+    <!-- 配置导入对话框 -->
+    <string name="import_config_dialog_title">导入配置预览</string>
+    <string name="import_config_metadata_title">配置信息</string>
+    <string name="import_config_category_title">选择要导入的分类</string>
+    <string name="import_config_warnings_title">⚠ 警告</string>
+    <string name="import_config_btn_confirm">确认导入</string>
+    <string name="import_config_btn_cancel">取消</string>
+    <string name="import_config_btn_select_all">全选</string>
+    <string name="import_config_btn_deselect_all">取消全选</string>
+    <string name="import_config_success">✅ 配置导入成功</string>
+    <string name="import_config_failed">❌ 配置导入失败，已回滚</string>
+    <string name="import_config_no_category">请至少选择一个分类</string>
+    
+    <!-- 配置重置对话框 -->
+    <string name="reset_config_dialog_title">重置配置</string>
+    <string name="reset_config_dialog_message">确定要清除所有配置吗？\n\n此操作将恢复所有设置为默认值，且无法撤销。</string>
+    <string name="reset_config_btn_confirm">确定重置</string>
+    <string name="reset_config_success">配置已重置</string>
+    
+    <!-- 配置分类名称 -->
+    <string name="config_category_ai_settings">AI 设置</string>
+    <string name="config_category_proxy_settings">代理设置</string>
+    <string name="config_category_filter_settings">过滤设置</string>
+    <string name="config_category_image_recognition">图片识别</string>
+    <string name="config_category_display_settings">显示设置</string>
+    <string name="config_category_prompts">提示词</string>
+    
+    <!-- 按钮样式设置 -->
+    <string name="gal_button_style_cat_title">按钮样式</string>
+    <string name="gal_button_fill_color_title">填充颜色</string>
+    <string name="gal_button_fill_color_summary">选项按钮的背景颜色</string>
+    <string name="gal_button_border_color_title">边框颜色</string>
+    <string name="gal_button_border_color_summary">选项按钮的边框颜色</string>
+    <string name="gal_button_border_width_title">边框宽度</string>
+    <string name="gal_button_border_width_summary">选项按钮的边框宽度（0-10dp，0为无边框）</string>
+    <string name="gal_button_text_color_title">字体颜色</string>
+    <string name="gal_button_text_color_summary">选项按钮的文字颜色</string>
+    <string name="gal_reset_button_style_title">重置按钮样式</string>
+    <string name="gal_reset_button_style_summary">恢复按钮样式为默认设置</string>
+    
+    <!-- 颜色选择器 -->
+    <string name="color_picker_title">选择颜色</string>
+    <string name="color_picker_fill_title">选择填充颜色</string>
+    <string name="color_picker_border_title">选择边框颜色</string>
+    <string name="color_picker_text_title">选择字体颜色</string>
+    <string name="color_picker_preview">预览</string>
+    <string name="color_picker_preset">预设颜色</string>
+    <string name="color_picker_hex">HEX</string>
+    <string name="color_picker_confirm">确定</string>
+    <string name="color_picker_cancel">取消</string>
+    
+    <!-- 重置按钮样式对话框 -->
+    <string name="reset_button_style_dialog_title">重置按钮样式</string>
+    <string name="reset_button_style_dialog_message">确定要重置所有按钮样式为默认设置吗？</string>
+    <string name="reset_button_style_success">按钮样式已重置</string>
+    
     <!-- 关于 -->
     <string name="gal_about_cat_title">关于</string>
     <string name="gal_contact_title">联系作者</string>

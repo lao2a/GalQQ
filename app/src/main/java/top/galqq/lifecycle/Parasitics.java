@@ -2,12 +2,12 @@ package top.galqq.lifecycle;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
-import android.app.Application;
 import android.app.Instrumentation;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
+import android.content.pm.PackageManager;
 import android.content.res.AssetManager;
 import android.content.res.Resources;
 import android.content.res.loader.ResourcesLoader;
@@ -35,34 +35,26 @@ import java.util.List;
 import de.robv.android.xposed.XposedBridge;
 import top.galqq.R;
 import top.galqq.hook.GalqqHook;
+import top.galqq.utils.HostInfo;
 
+/**
+ * Activity 代理和资源注入
+ * 完全参照 QAuxiliary 的实现
+ */
 public class Parasitics {
+
+    private Parasitics() {
+    }
 
     private static final String TAG = "GalQQ.Parasitics";
     private static boolean __stub_hooked = false;
     private static String sModulePath = null;
-    
-    /**
-     * 调试日志输出（受配置开关控制）
-     */
-    private static void debugLog(String message) {
-        try {
-            if (top.galqq.config.ConfigManager.isVerboseLogEnabled()) {
-                XposedBridge.log(message);
-            }
-        } catch (Throwable ignored) {
-            // ConfigManager 未初始化时忽略
-        }
+
+    private static void log(String message) {
+        XposedBridge.log(TAG + ": " + message);
     }
-    
-    /**
-     * 错误日志（始终输出）
-     */
-    private static void errorLog(String message) {
-        XposedBridge.log(message);
-    }
-    
-    private static void errorLog(Throwable t) {
+
+    private static void log(Throwable t) {
         XposedBridge.log(t);
     }
 
@@ -70,8 +62,12 @@ public class Parasitics {
         sModulePath = path;
     }
 
+    public static String getModulePath() {
+        return sModulePath;
+    }
+
     public static void injectModuleResources(Resources res) {
-        if (res == null || sModulePath == null) {
+        if (res == null) {
             return;
         }
         try {
@@ -79,7 +75,10 @@ public class Parasitics {
             return;
         } catch (Resources.NotFoundException ignored) {
         }
-
+        if (sModulePath == null) {
+            log("sModulePath is null, cannot inject resources");
+            return;
+        }
         if (Build.VERSION.SDK_INT >= 30) {
             injectResourcesAboveApi30(res, sModulePath);
         } else {
@@ -96,7 +95,12 @@ public class Parasitics {
             loader.addProvider(provider);
             res.addLoaders(loader);
         } catch (IOException e) {
-            errorLog(TAG + ": Failed to inject resources (API 30+): " + e.getMessage());
+            log("Failed to inject resources (API 30+): " + e.getMessage());
+            // fallback
+            injectResourcesBelowApi30(res, path);
+        } catch (IllegalArgumentException e) {
+            // fallback
+            injectResourcesBelowApi30(res, path);
         }
     }
 
@@ -109,34 +113,25 @@ public class Parasitics {
             addAssetPath.setAccessible(true);
             addAssetPath.invoke(assets, path);
         } catch (Exception e) {
-            errorLog(TAG + ": Failed to inject resources (< API 30): " + e.getMessage());
+            log(e);
         }
     }
 
+
+    @SuppressWarnings("JavaReflectionMemberAccess")
     @SuppressLint({"PrivateApi", "DiscouragedPrivateApi"})
     public static void initForStubActivity(Context ctx) {
         if (__stub_hooked) {
             return;
         }
         try {
-            // 检查路径有效性
-            boolean needRefresh = sModulePath == null;
-            if (!needRefresh) {
-                File moduleFile = new File(sModulePath);
-                if (!moduleFile.exists() || !moduleFile.canRead()) {
-                    debugLog(TAG + ": sModulePath is invalid or unreadable: " + sModulePath);
-                    needRefresh = true;
-                }
-            }
-
-            // 尝试动态获取模块路径（解决ENOENT问题）
-            if (needRefresh) {
+            // 动态获取模块路径（如果需要）
+            if (sModulePath == null || !new File(sModulePath).exists()) {
                 try {
                     Context moduleContext = ctx.createPackageContext("top.galqq", Context.CONTEXT_IGNORE_SECURITY);
                     sModulePath = moduleContext.getApplicationInfo().sourceDir;
-                    debugLog(TAG + ": Resolved module path via createPackageContext: " + sModulePath);
                 } catch (Exception e) {
-                    errorLog(TAG + ": Failed to resolve module path: " + e.getMessage());
+                    log("Failed to resolve module path: " + e.getMessage());
                 }
             }
 
@@ -144,14 +139,14 @@ public class Parasitics {
             Method currentActivityThread = clazz_ActivityThread.getDeclaredMethod("currentActivityThread");
             currentActivityThread.setAccessible(true);
             Object sCurrentActivityThread = currentActivityThread.invoke(null);
-            
+
+            // Hook Instrumentation
             Field mInstrumentation = clazz_ActivityThread.getDeclaredField("mInstrumentation");
             mInstrumentation.setAccessible(true);
             Instrumentation instrumentation = (Instrumentation) mInstrumentation.get(sCurrentActivityThread);
-            if (!(instrumentation instanceof ProxyInstrumentation)) {
-                mInstrumentation.set(sCurrentActivityThread, new ProxyInstrumentation(instrumentation));
-            }
+            mInstrumentation.set(sCurrentActivityThread, new ProxyInstrumentation(instrumentation));
 
+            // Hook Handler
             Field field_mH = clazz_ActivityThread.getDeclaredField("mH");
             field_mH.setAccessible(true);
             Handler oriHandler = (Handler) field_mH.get(sCurrentActivityThread);
@@ -162,6 +157,7 @@ public class Parasitics {
                 field_mCallback.set(oriHandler, new ProxyHandlerCallback(current));
             }
 
+            // Hook IActivityManager
             Class<?> activityManagerClass;
             Field gDefaultField;
             try {
@@ -172,7 +168,7 @@ public class Parasitics {
                     activityManagerClass = Class.forName("android.app.ActivityManager");
                     gDefaultField = activityManagerClass.getDeclaredField("IActivityManagerSingleton");
                 } catch (Exception err2) {
-                    errorLog(TAG + ": Unable to get IActivityManagerSingleton");
+                    log("Unable to get IActivityManagerSingleton");
                     return;
                 }
             }
@@ -182,15 +178,13 @@ public class Parasitics {
             Field mInstanceField = singletonClass.getDeclaredField("mInstance");
             mInstanceField.setAccessible(true);
             Object mInstance = mInstanceField.get(gDefault);
-            
-            if (mInstance != null) {
-                Object amProxy = Proxy.newProxyInstance(
-                        Parasitics.class.getClassLoader(),
-                        new Class[]{Class.forName("android.app.IActivityManager")},
-                        new IActivityManagerHandler(mInstance, ctx));
-                mInstanceField.set(gDefault, amProxy);
-            }
+            Object amProxy = Proxy.newProxyInstance(
+                    Parasitics.class.getClassLoader(),
+                    new Class[]{Class.forName("android.app.IActivityManager")},
+                    new IActivityManagerHandler(mInstance));
+            mInstanceField.set(gDefault, amProxy);
 
+            // Hook IActivityTaskManager (Android 10+)
             try {
                 Class<?> activityTaskManagerClass = Class.forName("android.app.ActivityTaskManager");
                 Field fIActivityTaskManagerSingleton = activityTaskManagerClass.getDeclaredField("IActivityTaskManagerSingleton");
@@ -201,26 +195,43 @@ public class Parasitics {
                 Object proxy2 = Proxy.newProxyInstance(
                         Parasitics.class.getClassLoader(),
                         new Class[]{Class.forName("android.app.IActivityTaskManager")},
-                        new IActivityManagerHandler(mDefaultTaskMgr, ctx));
+                        new IActivityManagerHandler(mDefaultTaskMgr));
                 mInstanceField.set(singleton, proxy2);
             } catch (Exception ignored) {
             }
 
+            // Hook PackageManager
+            Field sPackageManagerField = clazz_ActivityThread.getDeclaredField("sPackageManager");
+            sPackageManagerField.setAccessible(true);
+            Object packageManagerImpl = sPackageManagerField.get(sCurrentActivityThread);
+            Class<?> iPackageManagerInterface = Class.forName("android.content.pm.IPackageManager");
+            PackageManager pm = ctx.getPackageManager();
+            Field mPmField = pm.getClass().getDeclaredField("mPM");
+            mPmField.setAccessible(true);
+            Object pmProxy = Proxy.newProxyInstance(
+                    iPackageManagerInterface.getClassLoader(),
+                    new Class[]{iPackageManagerInterface},
+                    new PackageManagerInvocationHandler(packageManagerImpl));
+            sPackageManagerField.set(sCurrentActivityThread, pmProxy);
+            mPmField.set(pm, pmProxy);
+
             __stub_hooked = true;
-            debugLog(TAG + ": Activity Proxy initialized");
+            log("Activity Proxy initialized successfully");
         } catch (Exception e) {
-            errorLog(TAG + ": Failed to init Activity Proxy: " + e.getMessage());
-            errorLog(e);
+            log("Failed to init Activity Proxy: " + e.getMessage());
+            log(e);
         }
     }
 
+
+    /**
+     * IActivityManager 代理处理器
+     */
     public static class IActivityManagerHandler implements InvocationHandler {
         private final Object mOrigin;
-        private final Context mContext;
 
-        public IActivityManagerHandler(Object origin, Context context) {
+        public IActivityManagerHandler(Object origin) {
             mOrigin = origin;
-            mContext = context;
         }
 
         @Override
@@ -236,15 +247,14 @@ public class Parasitics {
                 if (index != -1) {
                     Intent raw = (Intent) args[index];
                     ComponentName component = raw.getComponent();
-                    if (component != null
-                            && mContext.getPackageName().equals(component.getPackageName())
+                    Context hostApp = HostInfo.getApplication();
+                    if (hostApp != null && component != null
+                            && hostApp.getPackageName().equals(component.getPackageName())
                             && ActProxyMgr.isModuleProxyActivity(component.getClassName())) {
-                        
                         Intent wrapper = new Intent();
                         wrapper.setClassName(component.getPackageName(), ActProxyMgr.STUB_DEFAULT_ACTIVITY);
-                        wrapper.putExtra(ActProxyMgr.STUB_DEFAULT_ACTIVITY, raw); // Use key as marker
+                        wrapper.putExtra(ActProxyMgr.ACTIVITY_PROXY_INTENT, raw);
                         args[index] = wrapper;
-                        debugLog(TAG + ": Intercepted startActivity for " + component.getClassName());
                     }
                 }
             }
@@ -256,6 +266,9 @@ public class Parasitics {
         }
     }
 
+    /**
+     * Handler.Callback 代理
+     */
     public static class ProxyHandlerCallback implements Handler.Callback {
         private final Handler.Callback mNextCallbackHook;
 
@@ -265,113 +278,136 @@ public class Parasitics {
 
         @Override
         public boolean handleMessage(Message msg) {
-            // Only log critical messages to avoid spam
-            // Remove all logging for common messages like what=131, 115, 114, etc.
-            if (msg.what == 159) { // EXECUTE_TRANSACTION - this is important
+            if (msg.what == 100) {
+                // LAUNCH_ACTIVITY - 旧版本 Android 和某些 ROM 使用
+                onHandleLaunchActivity(msg);
+            } else if (msg.what == 159) {
+                // EXECUTE_TRANSACTION - 新版本 Android 使用
                 onHandleExecuteTransaction(msg);
             }
-            // Call next callback without logging other messages
             if (mNextCallbackHook != null) {
                 return mNextCallbackHook.handleMessage(msg);
             }
             return false;
         }
 
+        @SuppressLint({"PrivateApi", "DiscouragedPrivateApi"})
         private void onHandleLaunchActivity(Message msg) {
-            debugLog("GalQQ.ProxyHandlerCallback: onHandleLaunchActivity called");
             try {
                 Object activityClientRecord = msg.obj;
                 Field field_intent = activityClientRecord.getClass().getDeclaredField("intent");
                 field_intent.setAccessible(true);
                 Intent intent = (Intent) field_intent.get(activityClientRecord);
-                if (intent != null) {
-                    Bundle bundle = null;
-                    // 关键：克隆Intent（QAuxiliary的做法）
-                    Intent cloneIntent = new Intent(intent);
-                    try {
-                        Field fExtras = Intent.class.getDeclaredField("mExtras");
-                        fExtras.setAccessible(true);
-                        bundle = (Bundle) fExtras.get(cloneIntent);
-                    } catch (Exception e) {
-                        errorLog(e);
-                    }
-                    
-                    if (bundle != null) {
-                        // 设置为宿主(QQ)的ClassLoader
-                        bundle.setClassLoader(Context.class.getClassLoader());
-                        // 处理代理Activity
-                        if (cloneIntent.hasExtra(ActProxyMgr.STUB_DEFAULT_ACTIVITY)) {
-                            Intent realIntent = cloneIntent.getParcelableExtra(ActProxyMgr.STUB_DEFAULT_ACTIVITY);
-                            field_intent.set(activityClientRecord, realIntent);
-                        }
+                if (intent == null) return;
+                
+                Bundle bundle = null;
+                Intent cloneIntent = new Intent(intent);
+                try {
+                    Field fExtras = Intent.class.getDeclaredField("mExtras");
+                    fExtras.setAccessible(true);
+                    bundle = (Bundle) fExtras.get(cloneIntent);
+                } catch (Exception e) {
+                    log(e);
+                }
+                if (bundle != null) {
+                    bundle.setClassLoader(Parasitics.class.getClassLoader());
+                    if (cloneIntent.hasExtra(ActProxyMgr.ACTIVITY_PROXY_INTENT)) {
+                        Intent realIntent = cloneIntent.getParcelableExtra(ActProxyMgr.ACTIVITY_PROXY_INTENT);
+                        field_intent.set(activityClientRecord, realIntent);
                     }
                 }
             } catch (Exception e) {
-                errorLog(e);
+                log(e);
             }
         }
 
+        @SuppressLint({"PrivateApi", "DiscouragedPrivateApi"})
         private void onHandleExecuteTransaction(Message msg) {
             Object clientTransaction = msg.obj;
             try {
                 if (clientTransaction != null) {
-                    Method getCallbacks = Class.forName("android.app.servertransaction.ClientTransaction").getDeclaredMethod("getCallbacks");
+                    Method getCallbacks = Class.forName("android.app.servertransaction.ClientTransaction")
+                            .getDeclaredMethod("getCallbacks");
                     getCallbacks.setAccessible(true);
                     List<?> clientTransactionItems = (List<?>) getCallbacks.invoke(clientTransaction);
-                    if (clientTransactionItems != null) {
+                    if (clientTransactionItems != null && !clientTransactionItems.isEmpty()) {
                         for (Object item : clientTransactionItems) {
-                            String itemClassName = item.getClass().getName();
-                            if (itemClassName.contains("LaunchActivityItem")) {
-                                processLaunchActivityItem(item);
+                            Class<?> c = item.getClass();
+                            if (c.getName().contains("LaunchActivityItem")) {
+                                processLaunchActivityItem(item, clientTransaction);
                             }
                         }
                     }
                 }
             } catch (Exception e) {
-                // Only log errors, not normal operations
-                errorLog("GalQQ.ProxyHandlerCallback: Error in EXECUTE_TRANSACTION: " + e.getMessage());
+                log(e);
             }
         }
 
-        private void processLaunchActivityItem(Object item) {
+        @SuppressLint({"PrivateApi", "DiscouragedPrivateApi"})
+        private void processLaunchActivityItem(Object item, Object clientTransaction) throws ReflectiveOperationException {
+            Class<?> c = item.getClass();
+            Field fmIntent = c.getDeclaredField("mIntent");
+            fmIntent.setAccessible(true);
+            Intent wrapper = (Intent) fmIntent.get(item);
+            if (wrapper == null) return;
+            
+            Intent cloneIntent = (Intent) wrapper.clone();
+            Bundle bundle = null;
             try {
-                Field fmIntent = item.getClass().getDeclaredField("mIntent");
-                fmIntent.setAccessible(true);
-                Intent wrapper = (Intent) fmIntent.get(item);
-                if (wrapper != null) {
-                    // Clone Intent following QAuxiliary's approach
-                    Intent cloneIntent = (Intent) wrapper.clone();
-                    Bundle bundle = null;
-                    try {
-                        Field fExtras = Intent.class.getDeclaredField("mExtras");
-                        fExtras.setAccessible(true);
-                        bundle = (Bundle) fExtras.get(cloneIntent);
-                    } catch (Exception e) {
-                        // Ignore
-                    }
+                Field fExtras = Intent.class.getDeclaredField("mExtras");
+                fExtras.setAccessible(true);
+                bundle = (Bundle) fExtras.get(cloneIntent);
+            } catch (Exception e) {
+                log(e);
+            }
+            if (bundle != null) {
+                bundle.setClassLoader(Parasitics.class.getClassLoader());
+                if (cloneIntent.hasExtra(ActProxyMgr.ACTIVITY_PROXY_INTENT)) {
+                    Intent realIntent = cloneIntent.getParcelableExtra(ActProxyMgr.ACTIVITY_PROXY_INTENT);
+                    fmIntent.set(item, realIntent);
                     
-                    if (bundle != null) {
-                        // Set to host (QQ) ClassLoader
-                        bundle.setClassLoader(Context.class.getClassLoader());
-                        // Handle proxy Activity
-                        if (cloneIntent.hasExtra(ActProxyMgr.STUB_DEFAULT_ACTIVITY)) {
-                            Intent realIntent = cloneIntent.getParcelableExtra(ActProxyMgr.STUB_DEFAULT_ACTIVITY);
-                            fmIntent.set(item, realIntent);
+                    // Android 12+ 需要额外处理
+                    if (Build.VERSION.SDK_INT >= 31) {
+                        try {
+                            IBinder token = (IBinder) clientTransaction.getClass()
+                                    .getMethod("getActivityToken").invoke(clientTransaction);
+                            Class<?> clazz_ActivityThread = Class.forName("android.app.ActivityThread");
+                            Method currentActivityThread = clazz_ActivityThread.getDeclaredMethod("currentActivityThread");
+                            currentActivityThread.setAccessible(true);
+                            Object activityThread = currentActivityThread.invoke(null);
+                            if (activityThread != null) {
+                                try {
+                                    Object acr = activityThread.getClass()
+                                            .getMethod("getLaunchingActivity", IBinder.class)
+                                            .invoke(activityThread, token);
+                                    if (acr != null) {
+                                        Field fAcrIntent = acr.getClass().getDeclaredField("intent");
+                                        fAcrIntent.setAccessible(true);
+                                        fAcrIntent.set(acr, realIntent);
+                                    }
+                                } catch (NoSuchMethodException e) {
+                                    // Android 13+ 可能没有这个方法
+                                }
+                            }
+                        } catch (Exception e) {
+                            // 忽略
                         }
                     }
                 }
-            } catch (Exception e) {
-                // Only log errors
-                errorLog("GalQQ.ProxyHandlerCallback: Error in processLaunchActivityItem: " + e.getMessage());
             }
         }
     }
 
+
+    /**
+     * Instrumentation 代理
+     */
     public static class ProxyInstrumentation extends Instrumentation {
         private final Instrumentation mBase;
 
         public ProxyInstrumentation(Instrumentation base) {
-            mBase = base;
+            this.mBase = base;
         }
 
         @Override
@@ -381,7 +417,10 @@ public class Parasitics {
                 return mBase.newActivity(cl, className, intent);
             } catch (Exception e) {
                 if (ActProxyMgr.isModuleProxyActivity(className)) {
-                    return (Activity) GalqqHook.class.getClassLoader().loadClass(className).newInstance();
+                    ClassLoader selfClassLoader = GalqqHook.class.getClassLoader();
+                    if (selfClassLoader != null) {
+                        return (Activity) selfClassLoader.loadClass(className).newInstance();
+                    }
                 }
                 throw e;
             }
@@ -389,31 +428,97 @@ public class Parasitics {
 
         @Override
         public void callActivityOnCreate(Activity activity, Bundle icicle) {
-            // 对savedInstanceState Bundle设置ClassLoader（仅模块Activity需要）
             if (icicle != null) {
                 String className = activity.getClass().getName();
-                if (ActProxyMgr.isModuleProxyActivity(className)) {
+                if (ActProxyMgr.isModuleBundleClassLoaderRequired(className)) {
                     icicle.setClassLoader(GalqqHook.class.getClassLoader());
                 }
             }
-            // 对所有Activity注入资源（QAuxiliary做法）
             injectModuleResources(activity.getResources());
             mBase.callActivityOnCreate(activity, icicle);
         }
-        
-        
+
         @Override
         public void callActivityOnCreate(Activity activity, Bundle icicle, PersistableBundle persistentState) {
-            // 对savedInstanceState Bundle设置ClassLoader（仅模块Activity需要）
             if (icicle != null) {
                 String className = activity.getClass().getName();
-                if (ActProxyMgr.isModuleProxyActivity(className)) {
+                if (ActProxyMgr.isModuleBundleClassLoaderRequired(className)) {
                     icicle.setClassLoader(GalqqHook.class.getClassLoader());
                 }
             }
-            // 对所有Activity注入资源（QAuxiliary做法）
             injectModuleResources(activity.getResources());
             mBase.callActivityOnCreate(activity, icicle, persistentState);
+        }
+    }
+
+    /**
+     * PackageManager 代理处理器
+     */
+    public static class PackageManagerInvocationHandler implements InvocationHandler {
+        private final Object target;
+
+        public PackageManagerInvocationHandler(Object target) {
+            if (target == null) {
+                throw new NullPointerException("IPackageManager == null");
+            }
+            this.target = target;
+        }
+
+        @Override
+        public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+            try {
+                if ("getActivityInfo".equals(method.getName())) {
+                    ActivityInfo ai = (ActivityInfo) method.invoke(target, args);
+                    if (ai != null) {
+                        return ai;
+                    }
+                    ComponentName component = (ComponentName) args[0];
+                    long flags = ((Number) args[1]).longValue();
+                    Context hostApp = HostInfo.getApplication();
+                    if (hostApp != null 
+                            && hostApp.getPackageName().equals(component.getPackageName())
+                            && ActProxyMgr.isModuleProxyActivity(component.getClassName())) {
+                        return makeProxyActivityInfo(component.getClassName(), flags);
+                    }
+                    return null;
+                }
+                return method.invoke(target, args);
+            } catch (InvocationTargetException ite) {
+                throw ite.getTargetException();
+            }
+        }
+
+        @Nullable
+        private ActivityInfo makeProxyActivityInfo(String className, long flags) {
+            try {
+                Class.forName(className);
+                Context ctx = HostInfo.getApplication();
+                if (ctx == null) return null;
+                
+                String[] candidates = {
+                    "com.tencent.mobileqq.activity.QQSettingSettingActivity",
+                    "com.tencent.mobileqq.activity.QPublicFragmentActivity"
+                };
+                for (String activityName : candidates) {
+                    try {
+                        ActivityInfo proto = ctx.getPackageManager().getActivityInfo(
+                            new ComponentName(ctx.getPackageName(), activityName),
+                            (int) flags);
+                        proto.targetActivity = null;
+                        proto.taskAffinity = null;
+                        proto.descriptionRes = 0;
+                        proto.name = className;
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            proto.splitName = null;
+                        }
+                        proto.configChanges |= ActivityInfo.CONFIG_UI_MODE;
+                        return proto;
+                    } catch (PackageManager.NameNotFoundException ignored) {
+                    }
+                }
+            } catch (ClassNotFoundException ignored) {
+            }
+            return null;
         }
     }
 }
