@@ -78,6 +78,8 @@ public class ConfigExporter {
                 return ConfigManager.isAutoShowOptionsEnabled();
             case ConfigManager.KEY_AFFINITY_ENABLED:
                 return ConfigManager.isAffinityEnabled();
+            case ConfigManager.KEY_AI_INCLUDE_AFFINITY:
+                return ConfigManager.isAiIncludeAffinity();
             case ConfigManager.KEY_VERBOSE_LOG:
                 return ConfigManager.isVerboseLogEnabled();
             case ConfigManager.KEY_DEBUG_HOOK_LOG:

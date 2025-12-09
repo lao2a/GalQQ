@@ -244,6 +244,9 @@ public class ConfigImporter {
                 case ConfigManager.KEY_AFFINITY_ENABLED:
                     ConfigManager.setAffinityEnabled(toBoolean(value));
                     break;
+                case ConfigManager.KEY_AI_INCLUDE_AFFINITY:
+                    ConfigManager.setAiIncludeAffinity(toBoolean(value));
+                    break;
                 case ConfigManager.KEY_VERBOSE_LOG:
                     ConfigManager.setVerboseLogEnabled(toBoolean(value));
                     break;
